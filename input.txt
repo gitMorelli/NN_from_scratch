@@ -1,0 +1,24 @@
+Number of input neurons: 35
+Num. of rows & columns: 7 5
+Number of classes: 3
+Number of examples: 2
+
+Example 1:
+0 0 1 0 0
+0 1 0 1 0
+1 0 0 0 1
+1 1 1 1 1
+1 0 0 0 1
+1 0 0 0 1
+0 0 0 0 1
+Target output: 1 0 0
+
+Example 2:
+1 1 1 0 0
+1 0 0 1 0
+1 0 0 1 0
+1 1 1 0 0
+1 0 0 1 0
+1 0 0 1 0
+1 1 1 0 0
+Target output: 0 1 0
