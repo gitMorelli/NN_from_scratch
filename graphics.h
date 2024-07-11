@@ -13,6 +13,7 @@
 #define KEY_RELEASED 2
 #define WIDTH 640
 #define HEIGHT 480
+#define MAX_BUTTONS 20
 
 static int INPUT; //stores the input of the user (which come from the mouse interaction with some buttons)
 // quit=0, menu=1, train=2, test=3, interactive=4
@@ -34,7 +35,8 @@ static struct Box{
     int y2;
     ALLEGRO_COLOR color;
     char text[15];
-    //int text_position;
+    int text_position;
+    ALLEGRO_COLOR text_color;
 } ;
 
 void display_training_interface();
@@ -46,6 +48,21 @@ void destroy_graphics();
 bool is_point_inside_button();
 void menu_loop();
 void interactive_mode_initialization();
+struct Box create_default_box();
+void interactive_loop();
+
+struct Box create_default_box() {
+    struct Box newBox;
+    newBox.x1 = 0; // Default x1 value
+    newBox.y1 = 0; // Default y1 value
+    newBox.x2 = 100; // Default x2 value
+    newBox.y2 = 50; // Default y2 value
+    strcpy(newBox.text, "Default Text"); // Default text
+    newBox.text_color=al_map_rgb(255, 255, 255);
+    newBox.color = al_map_rgb(255, 255, 255); // Default color
+    newBox.text_position=1;
+    return newBox;
+}
 
 bool is_point_inside_button(int x, int y, struct Box button) {
     return (x >= button.x1 && x <= button.x2 && y >= button.y1 && y <= button.y2);
@@ -144,11 +161,12 @@ void menu_loop(){
                 break;
             case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
                 if (is_point_inside_button(event.mouse.x, event.mouse.y, boxes[0])) {
-                    // Button was clicked, perform an action
-                    printf("%s\n",boxes[0].text);
+                    submenu=0;
+                    done=true;
                 }
                 else if(is_point_inside_button(event.mouse.x, event.mouse.y, boxes[1])){
-                    printf("%s\n",boxes[1].text);
+                    submenu=1;
+                    done=true;
                 }
                 else if (is_point_inside_button(event.mouse.x, event.mouse.y, boxes[2])){
                     submenu=2;
@@ -191,8 +209,14 @@ void menu_loop(){
     destroy_graphics();
     switch (submenu)
     {
+    case 0:
+        training_loop();
+        break;
+    case 1:
+        testing_loop();
+        break;
     case 2:
-        interactive_mode_initialization();
+        interactive_loop();
         break;
     
     default:
@@ -208,15 +232,17 @@ void interactive_mode_initialization(){
 //a window where i can select the network to use
 void interactive_loop(){
     interactive_mode_initialization();
+    bool drawing = false; // Flag to track whether we are currently drawing
+    float last_x = 0, last_y = 0; // Keep track of the last position
     int x_blocks=width/6; //i divide in fifths and the buttons take the central fifth
     int y_blocks=height/6; //the three boxes will go in 
     int x_blocks_fine=width/12; //i divide in fifths and the buttons take the central fifth
     int y_blocks_fine=height/12; //the three boxes will go in 
     int submenu=2;//index to tell in which windows i need to go when menu is closed
-    struct Box clear_button;
-    struct Box NN_selection;
-    struct Box result_box;
-    struct Box drawing_area;
+    struct Box clear_button = create_default_box();
+    struct Box NN_selection = create_default_box();
+    struct Box result_box = create_default_box();
+    struct Box drawing_area = create_default_box();
     //i define the drawing region
     drawing_area.color=al_map_rgb(255, 255, 255);
     drawing_area.x1=x_blocks*2;
@@ -227,24 +253,27 @@ void interactive_loop(){
     clear_button.color=al_map_rgba(0, 255, 0,0.6);
     clear_button.x1=x_blocks_fine*9;
     clear_button.x2=x_blocks_fine*11;
-    clear_button.y1=y_blocks_fine*6;
-    clear_button.y2=y_blocks_fine*7;
-    strcpy(result_box.text,"CLEAR");
+    clear_button.y1=y_blocks_fine*4;
+    clear_button.y2=y_blocks_fine*5;
+    strcpy(clear_button.text,"CLEAR");
     //i define the selection button
     NN_selection.color=al_map_rgba(255, 255, 120,0.6);
     NN_selection.x1=x_blocks_fine*9;
     NN_selection.x2=x_blocks_fine*11;
-    NN_selection.y1=y_blocks_fine*8;
-    NN_selection.y2=y_blocks_fine*9;
-    strcpy(result_box.text,"SELECT NN");
+    NN_selection.y1=y_blocks_fine*6;
+    NN_selection.y2=y_blocks_fine*7;
+    strcpy(NN_selection.text,"SELECT NN");
     //i define the result region
     result_box.color=al_map_rgb(255, 255, 255);
     result_box.x1=x_blocks_fine*5;
     result_box.x2=x_blocks_fine*7;
     result_box.y1=y_blocks_fine*9;
     result_box.y2=y_blocks_fine*10;
+    result_box.text_position=2;//left aligned
+    result_box.text_color=al_map_rgb(0, 0, 0);
     strcpy(result_box.text,"RESULT:");
-    struct Box boxes[4]={clear_button,NN_selection,result_box,drawing_area};
+    const int num_boxes=4;
+    struct Box boxes[MAX_BUTTONS]={clear_button,NN_selection,result_box,drawing_area};
     while(1){
         al_wait_for_event(queue, &event);
 
@@ -257,9 +286,32 @@ void interactive_loop(){
                 }
                 for(int i = 0; i < ALLEGRO_KEY_MAX; i++)
                     key[i] &= KEY_SEEN;
-                redraw = true;
+                //redraw = true;
                 break;
             case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, clear_button)) {
+                    // Button was clicked, perform an action
+                    redraw = true;
+                }
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, drawing_area)) {
+                    printf("drawing\n");
+                    drawing = true; // Start drawing
+                    last_x = event.mouse.x; // Update last position
+                    last_y = event.mouse.y;
+                }
+                break;
+            case ALLEGRO_EVENT_MOUSE_BUTTON_UP:
+                drawing = false; // Stop drawing
+                break;
+            case ALLEGRO_EVENT_MOUSE_AXES:
+                if (drawing) {
+                    printf("still drawing\n");
+                    if (is_point_inside_button(event.mouse.x, event.mouse.y, drawing_area))
+                        al_draw_line(last_x, last_y, event.mouse.x, event.mouse.y, al_map_rgb(0, 0, 0), 1);
+                        al_flip_display();
+                    last_x = event.mouse.x;
+                    last_y = event.mouse.y;
+                }
                 break;
             case ALLEGRO_EVENT_KEY_DOWN:
                 key[event.keyboard.keycode] = KEY_SEEN | KEY_RELEASED;
@@ -277,13 +329,14 @@ void interactive_loop(){
             break;
 
         if(redraw && al_is_event_queue_empty(queue)){
+            //printf("aaaaah\n");
             al_clear_to_color(al_map_rgb(0, 0, 0));
             al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "INTERACTIVE");
-            for (int i=0;i<3;i++){
+            for (int i=0;i<num_boxes;i++){
                 al_draw_filled_rectangle(boxes[i].x1, boxes[i].y1, boxes[i].x2, boxes[i].y2, boxes[i].color);
                 float center_x=(boxes[i].x1+boxes[i].x2)/2;
                 float center_y=(boxes[i].y1+boxes[i].y2)/2;
-                al_draw_textf(font, al_map_rgb(255, 255, 255), center_x, center_y, 1, boxes[i].text);
+                al_draw_textf(font, boxes[i].text_color, center_x, center_y, boxes[i].text_position, boxes[i].text);
             }
 
             al_flip_display();
@@ -301,3 +354,262 @@ void interactive_loop(){
         break;
     }
 }
+
+void testing_mode_initialization(){
+    generic_initialization();
+}
+
+void testing_loop(){
+    testing_mode_initialization();
+    bool drawing = false; // Flag to track whether we are currently drawing
+    float last_x = 0, last_y = 0; // Keep track of the last position
+    int x_blocks=width/6; //i divide in fifths and the buttons take the central fifth
+    int y_blocks=height/6; //the three boxes will go in 
+    int x_blocks_fine=width/12; //i divide in fifths and the buttons take the central fifth
+    int y_blocks_fine=height/12; //the three boxes will go in 
+    int submenu=1;//index to tell in which windows i need to go when menu is closed
+    struct Box clear_button = create_default_box();
+    struct Box NN_selection = create_default_box();
+    struct Box result_box = create_default_box();
+    struct Box drawing_area = create_default_box();
+    //i define the drawing region
+    drawing_area.color=al_map_rgb(255, 255, 255);
+    drawing_area.x1=x_blocks*2;
+    drawing_area.x2=x_blocks*4;
+    drawing_area.y1=y_blocks*2;
+    drawing_area.y2=y_blocks*4;
+    //i define the clear button
+    clear_button.color=al_map_rgba(0, 255, 0,0.6);
+    clear_button.x1=x_blocks_fine*9;
+    clear_button.x2=x_blocks_fine*11;
+    clear_button.y1=y_blocks_fine*4;
+    clear_button.y2=y_blocks_fine*5;
+    strcpy(clear_button.text,"CLEAR");
+    //i define the selection button
+    NN_selection.color=al_map_rgba(255, 255, 120,0.6);
+    NN_selection.x1=x_blocks_fine*9;
+    NN_selection.x2=x_blocks_fine*11;
+    NN_selection.y1=y_blocks_fine*6;
+    NN_selection.y2=y_blocks_fine*7;
+    strcpy(NN_selection.text,"SELECT NN");
+    //i define the result region
+    result_box.color=al_map_rgb(255, 255, 255);
+    result_box.x1=x_blocks_fine*5;
+    result_box.x2=x_blocks_fine*7;
+    result_box.y1=y_blocks_fine*9;
+    result_box.y2=y_blocks_fine*10;
+    result_box.text_position=2;//left aligned
+    result_box.text_color=al_map_rgb(0, 0, 0);
+    strcpy(result_box.text,"RESULT:");
+    const int num_boxes=4;
+    struct Box boxes[MAX_BUTTONS]={clear_button,NN_selection,result_box,drawing_area};
+    while(1){
+        al_wait_for_event(queue, &event);
+
+        switch(event.type)
+        {
+            case ALLEGRO_EVENT_TIMER:
+                if(key[ALLEGRO_KEY_ESCAPE]){
+                    submenu=-1;
+                    done = true;
+                }
+                for(int i = 0; i < ALLEGRO_KEY_MAX; i++)
+                    key[i] &= KEY_SEEN;
+                //redraw = true;
+                break;
+            case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, clear_button)) {
+                    // Button was clicked, perform an action
+                    redraw = true;
+                }
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, drawing_area)) {
+                    printf("drawing\n");
+                    drawing = true; // Start drawing
+                    last_x = event.mouse.x; // Update last position
+                    last_y = event.mouse.y;
+                }
+                break;
+            case ALLEGRO_EVENT_MOUSE_BUTTON_UP:
+                drawing = false; // Stop drawing
+                break;
+            case ALLEGRO_EVENT_MOUSE_AXES:
+                if (drawing) {
+                    printf("still drawing\n");
+                    if (is_point_inside_button(event.mouse.x, event.mouse.y, drawing_area))
+                        al_draw_line(last_x, last_y, event.mouse.x, event.mouse.y, al_map_rgb(0, 0, 0), 1);
+                        al_flip_display();
+                    last_x = event.mouse.x;
+                    last_y = event.mouse.y;
+                }
+                break;
+            case ALLEGRO_EVENT_KEY_DOWN:
+                key[event.keyboard.keycode] = KEY_SEEN | KEY_RELEASED;
+                break;
+            case ALLEGRO_EVENT_KEY_UP:
+                key[event.keyboard.keycode] &= KEY_RELEASED;
+                break;
+
+            case ALLEGRO_EVENT_DISPLAY_CLOSE:
+                done = true;
+                break;
+        }
+
+        if(done)
+            break;
+
+        if(redraw && al_is_event_queue_empty(queue)){
+            //printf("aaaaah\n");
+            al_clear_to_color(al_map_rgb(0, 0, 0));
+            al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "TESTING");
+            for (int i=0;i<num_boxes;i++){
+                al_draw_filled_rectangle(boxes[i].x1, boxes[i].y1, boxes[i].x2, boxes[i].y2, boxes[i].color);
+                float center_x=(boxes[i].x1+boxes[i].x2)/2;
+                float center_y=(boxes[i].y1+boxes[i].y2)/2;
+                al_draw_textf(font, boxes[i].text_color, center_x, center_y, boxes[i].text_position, boxes[i].text);
+            }
+
+            al_flip_display();
+
+            redraw = false;
+        }
+    }
+    destroy_graphics();
+    switch (submenu)
+    {
+    case -1:// if escape is pressed i return to the menu
+        menu_loop();
+        break;
+    default:
+        break;
+    }
+}
+
+void training_mode_initialization(){
+    generic_initialization();
+}
+
+void training_loop(){
+    training_mode_initialization();
+    bool drawing = false; // Flag to track whether we are currently drawing
+    float last_x = 0, last_y = 0; // Keep track of the last position
+    int x_blocks=width/6; //i divide in fifths and the buttons take the central fifth
+    int y_blocks=height/6; //the three boxes will go in 
+    int x_blocks_fine=width/12; //i divide in fifths and the buttons take the central fifth
+    int y_blocks_fine=height/12; //the three boxes will go in 
+    int submenu=0;//index to tell in which windows i need to go when menu is closed
+    struct Box clear_button = create_default_box();
+    struct Box NN_selection = create_default_box();
+    struct Box result_box = create_default_box();
+    struct Box drawing_area = create_default_box();
+    //i define the drawing region
+    drawing_area.color=al_map_rgb(255, 255, 255);
+    drawing_area.x1=x_blocks*2;
+    drawing_area.x2=x_blocks*4;
+    drawing_area.y1=y_blocks*2;
+    drawing_area.y2=y_blocks*4;
+    //i define the clear button
+    clear_button.color=al_map_rgba(0, 255, 0,0.6);
+    clear_button.x1=x_blocks_fine*9;
+    clear_button.x2=x_blocks_fine*11;
+    clear_button.y1=y_blocks_fine*4;
+    clear_button.y2=y_blocks_fine*5;
+    strcpy(clear_button.text,"CLEAR");
+    //i define the selection button
+    NN_selection.color=al_map_rgba(255, 255, 120,0.6);
+    NN_selection.x1=x_blocks_fine*9;
+    NN_selection.x2=x_blocks_fine*11;
+    NN_selection.y1=y_blocks_fine*6;
+    NN_selection.y2=y_blocks_fine*7;
+    strcpy(NN_selection.text,"SELECT NN");
+    //i define the result region
+    result_box.color=al_map_rgb(255, 255, 255);
+    result_box.x1=x_blocks_fine*5;
+    result_box.x2=x_blocks_fine*7;
+    result_box.y1=y_blocks_fine*9;
+    result_box.y2=y_blocks_fine*10;
+    result_box.text_position=2;//left aligned
+    result_box.text_color=al_map_rgb(0, 0, 0);
+    strcpy(result_box.text,"RESULT:");
+    const int num_boxes=4;
+    struct Box boxes[MAX_BUTTONS]={clear_button,NN_selection,result_box,drawing_area};
+    while(1){
+        al_wait_for_event(queue, &event);
+
+        switch(event.type)
+        {
+            case ALLEGRO_EVENT_TIMER:
+                if(key[ALLEGRO_KEY_ESCAPE]){
+                    submenu=-1;
+                    done = true;
+                }
+                for(int i = 0; i < ALLEGRO_KEY_MAX; i++)
+                    key[i] &= KEY_SEEN;
+                //redraw = true;
+                break;
+            case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, clear_button)) {
+                    // Button was clicked, perform an action
+                    redraw = true;
+                }
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, drawing_area)) {
+                    printf("drawing\n");
+                    drawing = true; // Start drawing
+                    last_x = event.mouse.x; // Update last position
+                    last_y = event.mouse.y;
+                }
+                break;
+            case ALLEGRO_EVENT_MOUSE_BUTTON_UP:
+                drawing = false; // Stop drawing
+                break;
+            case ALLEGRO_EVENT_MOUSE_AXES:
+                if (drawing) {
+                    printf("still drawing\n");
+                    if (is_point_inside_button(event.mouse.x, event.mouse.y, drawing_area))
+                        al_draw_line(last_x, last_y, event.mouse.x, event.mouse.y, al_map_rgb(0, 0, 0), 1);
+                        al_flip_display();
+                    last_x = event.mouse.x;
+                    last_y = event.mouse.y;
+                }
+                break;
+            case ALLEGRO_EVENT_KEY_DOWN:
+                key[event.keyboard.keycode] = KEY_SEEN | KEY_RELEASED;
+                break;
+            case ALLEGRO_EVENT_KEY_UP:
+                key[event.keyboard.keycode] &= KEY_RELEASED;
+                break;
+
+            case ALLEGRO_EVENT_DISPLAY_CLOSE:
+                done = true;
+                break;
+        }
+
+        if(done)
+            break;
+
+        if(redraw && al_is_event_queue_empty(queue)){
+            //printf("aaaaah\n");
+            al_clear_to_color(al_map_rgb(0, 0, 0));
+            al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "TRAINING");
+            for (int i=0;i<num_boxes;i++){
+                al_draw_filled_rectangle(boxes[i].x1, boxes[i].y1, boxes[i].x2, boxes[i].y2, boxes[i].color);
+                float center_x=(boxes[i].x1+boxes[i].x2)/2;
+                float center_y=(boxes[i].y1+boxes[i].y2)/2;
+                al_draw_textf(font, boxes[i].text_color, center_x, center_y, boxes[i].text_position, boxes[i].text);
+            }
+
+            al_flip_display();
+
+            redraw = false;
+        }
+    }
+    destroy_graphics();
+    switch (submenu)
+    {
+    case -1:// if escape is pressed i return to the menu
+        menu_loop();
+        break;
+    default:
+        break;
+    }
+}
+

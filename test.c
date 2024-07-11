@@ -14,5 +14,6 @@ int main() {
     // Your code here
     //generic_initialization();
     menu_loop();
+    //interactive_loop();
     return 0;
 }
