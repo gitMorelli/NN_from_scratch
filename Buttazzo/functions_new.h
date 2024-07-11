@@ -1,6 +1,14 @@
 #ifndef FUNCTIONS_NEW_H_INCLUDED
 #define FUNCTIONS_NEW_H_INCLUDED
 #endif // FUNCTIONS_NEW_H_INCLUDED
+/*
+In summary, the provided code is a common practice in C and C++ to prevent 
+multiple inclusions of the same header file, ensuring that the declarations within 
+the header file are only included once in the program.
+*/
+
+#include <math.h>
+#include "graphics.h"
 
 #define MAXEXE 100 // max # of examples in TS
 #define MAXINP 100 // max # of input units
@@ -32,11 +40,12 @@ static int hid; // number of hidden units
 static int out; // number of output units
 static int nex; // number of training examples
 static int vex; // number of validation examples
+//static int mbs; // size of mini-batch 
 static float eta = ETA0; // learning
 static float mu = MU0; //momentum
 
 float rand_normal(float mu, float sigma);
-double sigmoid(float a);
+float sigmoid(float a);
 void bp_define_net(int ni, int nh, int no);
 void bp_reset_weights();
 void bp_set_learning_rate(float lr);
@@ -68,7 +77,8 @@ float bp_get_wo(int j, int i);
 float bp_get_wh(int h, int i);
 float bp_learn_sample(int k);
 float bp_learn_batch();
-float bp_learn_minibatch(int b, int mbs);
+float bp_learn_mb(int b, int mbs);
+float bp_learn_minibatch(int b, int mbs, int maxepoch);
 
 
 
@@ -254,12 +264,12 @@ float gerr; // global error
     } while ((iter < maxiter) && (gerr > eps));
 }
 
-float bp_learn_mb(int b){
+float bp_learn_mb(int b, int mbs){
 int i, j, k;
 float Eg = 0.0;
     bp_reset_dw();
     bp_shuffle_ts();
-    for (i=0; i<mbs; i++) {
+    for (i=0; i<mbs; i++) { //mbs is the number of elements in a mini-batch
         j = i + b*mbs; // compute mb index
         k = map[j]; // get sample index
         bp_set_ts_input(k);
@@ -327,7 +337,7 @@ float sum;
     }
 }
 
-int bp_learn_minibatch(float eps, int maxepoch)
+int bp_learn_minibatch(float eps, int mbs, int maxepoch)
 {
 int b, i, j, k;
 int iter = 0; // iteration counter
@@ -336,7 +346,7 @@ float gerr; // global error
     do {
         bp_shuffle_ts();
         for (b=0; b<nex/mbs; b++) {
-            gerr = bp_learn_mb(b);
+            gerr = bp_learn_mb(b,mbs);
             bp_display_error(iter, gerr);
             iter++;
         }
@@ -355,7 +365,7 @@ float Eg = 0.0;
         k = map[i];
         bp_set_ts_input(k);
         bp_compute_output();
-        Eg += bp_compute_error(k);
+        Eg += bp_compute_ts_error(k);
         bp_accumulate_dw(k);
     }
     bp_update_weights();

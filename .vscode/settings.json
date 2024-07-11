@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "time.h": "c",
+        "functions.h": "c",
+        "allegro_font.h": "c"
+    }
+}
