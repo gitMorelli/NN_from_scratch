@@ -1,23 +1,28 @@
+//#include "graphics.h"
 #include <math.h>
 #include <stdlib.h> // For srand
 #include <stdbool.h>
-#include "graphics.h"
+#include <stddef.h> // For NULL
+#include <stdio.h>
+#include <time.h>   // For time
+#include <string.h>
 
 #define max_file_name_length 20
-#define max_training_images 10000
-#define input_size 784
+#define max_training_images 60000
+#define max_testing_images 10000
+#define input_size 28
 #define n_classes 10
 #define max_neurons_per_layer 1000
 #define PI 3.14159265
 
 static char main_folder_name[max_file_name_length];
 
-static int input_images[max_training_images][input_size][input_size];
+static int input_images[max_training_images][input_size][input_size];//these will store the whole training set
 static int input_labels[max_training_images][n_classes];
 static int training_images[max_training_images][input_size][input_size];
 static int training_labels[max_training_images][n_classes];
-static int testing_images[max_training_images][input_size][input_size];
-static int testing_labels[max_training_images][n_classes];
+static int testing_images[max_testing_images][input_size][input_size];//this will store the whole testing set
+static int testing_labels[max_testing_images][n_classes];
 static int validation_images[max_training_images][input_size][input_size];
 static int validation_labels[max_training_images][n_classes];
 static int map_training_images[max_training_images];//map that keeps the ordering of the training images
@@ -42,14 +47,23 @@ static int type_of_loss; //0 for Log-likelihood, 1 for mean squared error
 static int type_of_initialization; //0 for random, 1 for gaussian
 static int type_of_shuffling; //0 for no shuffling, 1 for shuffling
 static float learning_rate; //the learning rate of the model
-static int train_val_split; 
+static float train_val_split; 
 static int minibatch_size;
 static int number_of_epochs;
 static float threshold_error;
 static float error_on_batch;
 static float error_on_epoch;
-float loss_on_example(int t_loss);
 
+float *int_to_float(float *y,int *x, int dim);
+void printIntegerByteByByte(int number);
+void read_magic_number(FILE *fptr);
+void read_dimensions(FILE *fptr,int n_dim);
+int flip_reading_order(int number);
+void load_test_set();
+void load_training_set();
+void read_labels(int *labels, FILE *fptr, int dim);
+void read_images(int (*images)[input_size][input_size], FILE *fptr, int dim);
+void print_image(int image[input_size][input_size]);
 void permute(int *x, int dim);
 void set_number_of_inputs(int n_inputs, int n_test_images);
 void split_data();
@@ -64,11 +78,11 @@ float ReLU_derivative(float x);
 float sigmoid_derivative(float x);
 void gaussian_layer_initialization(int n_layer);
 void weight_initialization();
-void layer_output(int *input, int layer_index, int activ_function);
-void neuron_output(int neuron_index, int layer_index, int *input, int activ_function);
+void layer_output(float *input, int layer_index, int activ_function);
+void neuron_output(int neuron_index, int layer_index, float *input, int activ_function);
 void forward_propagation(int input[input_size][input_size]);
-int *linearize(int x[input_size][input_size]);
-void learn_example(int input[input_size][input_size]);
+float *linearize(int x[input_size][input_size]);
+void learn_example(int input_index);
 void reset_dw_db();
 void average_dw_db(int M);
 void update_w_b();
@@ -78,8 +92,17 @@ float log_likelihood(int *t, float *y, int dim);
 float mean_squared_error(int *t, float *y, int dim);
 void train_network();
 float *get_probabilities(int input[input_size][input_size]);
-int get_best_class(int input[n_classes]);
-float accuracy(int *input_examples[input_size][input_size],int *input_labels[n_classes], int dim);
+int get_best_class(float input[n_classes]);
+float accuracy(int (*input_examples)[input_size][input_size],int *input_labels[n_classes], int dim);
+float loss_on_example(int *label,int t_loss);
+void testing_layer_initialization(int n_layer);
+
+float *int_to_float(float *y,int *x, int dim){
+    for (int i=0; i<dim; i++){
+        y[i] = (float)x[i];
+    }
+    return y;
+}
 
 void set_folder_name(char *folder)
 {
@@ -89,17 +112,86 @@ void set_folder_name(char *folder)
         main_folder_name[i] = folder[i];
 }
 
-void load_training_set()
-{
-    //load the data i use for training and validation
+void printIntegerByteByByte(int number) {
+    int size = sizeof(int);
+    for (int i = 0; i < size; i++) {
+        // Extract the lowest byte
+        unsigned char byte = (number >> (i * 8)) & 0xFF; //1byte = 8bits = 2^8 = 256 FF=255
+        printf("Byte %d: %02x\n", i, byte);
+    }
 }
 
-void load_test_set()
-{
-    //load the data i use for testing
+void read_magic_number(FILE *fptr) {
+    int magic_number;
+    fread(&magic_number, sizeof(int), 1, fptr);
+    //printIntegerByteByByte(flip_reading_order(magic_number));
+}// 3rd byte is 0x08 -> unsigned byte according to https://github.com/cvdfoundation/mnist 
+
+void read_dimensions(FILE *fptr,int n_dim) {
+    int dim_sizes[n_dim];
+    fread(dim_sizes, sizeof(int), n_dim, fptr);
+    /*for (int i = 0; i < n_dim; i++) {
+        printf("Dimension %d: %d\n", i, flip_reading_order(dim_sizes[i]));
+    }*/
 }
 
-void set_train_val(int n_minibatch, int n_train_val_split)
+int flip_reading_order(int number){
+    int size = sizeof(int);
+    int flipped=0;
+    unsigned char bytes[4];
+    unsigned char flipped_bytes[4];
+    for (int i = 0; i < size; i++) {
+        bytes[i] = (number >> (i * 8)) & 0xFF; 
+    }
+    for (int i = 0; i < size; i++) {
+        flipped_bytes[i] = bytes[size-i-1]; 
+    }
+    for (int i = 0; i < size; i++) {
+        flipped += flipped_bytes[i] << (i * 8);
+    }
+    return flipped;
+}
+
+void read_labels(int *labels, FILE *fptr, int dim) {
+    read_magic_number(fptr);
+    read_dimensions(fptr,1);
+    for (int i = 0; i < dim; i++) {
+        unsigned char c;
+        fread(&c, sizeof(unsigned char), 1, fptr);//labels are unsigned byte 
+        labels[i] = c;
+        //printf("%d \n",labels[i]);
+    }
+}
+
+void read_images(int (*images)[input_size][input_size], FILE *fptr, int dim) {
+    read_magic_number(fptr);
+    read_dimensions(fptr,3);//number of elements, width and length
+    for (int k=0;k<dim;k++){
+        for (int i = 0; i <input_size; i++) {
+            for (int j=0;j<input_size;j++){
+                unsigned char c;
+                fread(&c, sizeof(unsigned char), 1, fptr);
+                images[k][i][j] = c;
+            }
+        }
+    }
+}
+
+void print_image(int image[input_size][input_size]){
+    for (int i = 0; i <input_size; i++) {
+        for (int j=0;j<input_size;j++){
+            if(image[i][j]>0){
+                printf("x");
+            }
+            else{
+                printf(" ");
+            }
+        }
+        printf("\n");
+    }
+}
+
+void set_train_val(int n_minibatch, float n_train_val_split)
 {
     minibatch_size = n_minibatch;
     train_val_split = n_train_val_split;
@@ -144,6 +236,86 @@ void define_training_parameters(int n_epochs,float lr, int loss, int shuffling, 
     number_of_epochs = n_epochs;
     threshold_error=error;
 }
+
+void load_training_set()
+{
+    //load the data i use for training and validation
+    //load the data i use for testing
+    FILE *fptr;
+    char temporary[100];
+    strcpy(temporary,main_folder_name);
+    fptr = fopen(strcat(temporary,"/train-labels-idx1-ubyte"),"rb");
+    if(fptr == NULL)
+    {
+        printf("Error opening file!");   
+        exit(1);             
+    }
+    int labels[number_of_inputs];
+    read_labels(labels,fptr,number_of_inputs);
+    fclose(fptr);
+    //i put the labels in the 10 dimnesional form
+    for (int i=0; i<number_of_inputs; i++)
+    {
+        for (int j=0; j<n_classes; j++)
+        {
+            if (j==labels[i])
+                input_labels[i][j] = 1;
+            else
+                input_labels[i][j] = 0;
+        }
+    }
+    FILE *fptr2;
+    char temporary_2[100];
+    strcpy(temporary_2,main_folder_name);
+    fptr2 = fopen(strcat(temporary_2,"/train-images-idx3-ubyte"),"rb");
+    if(fptr2 == NULL)
+    {
+        printf("Error!");   
+        exit(1);             
+    }
+    read_images(input_images,fptr2,number_of_inputs);
+    fclose(fptr2);
+}
+
+void load_test_set()
+{
+    //load the data i use for testing
+    FILE *fptr;
+    char temporary[100];
+    strcpy(temporary,main_folder_name);
+    fptr = fopen(strcat(temporary,"/t10k-labels-idx1-ubyte"),"rb");
+    if(fptr == NULL)
+    {
+        printf("Error opening file!");   
+        exit(1);             
+    }
+    int labels[number_of_test_images];
+    read_labels(labels,fptr,number_of_test_images);
+    fclose(fptr);
+    //i put the labels in the 10 dimnesional form
+    for (int i=0; i<number_of_test_images; i++)
+    {
+        for (int j=0; j<n_classes; j++)
+        {
+            if (j==labels[i])
+                testing_labels[i][j] = 1;
+            else
+                testing_labels[i][j] = 0;
+        }
+    }
+    FILE *fptr2;
+    char temporary_2[100];
+    strcpy(temporary_2,main_folder_name);
+    fptr2 = fopen(strcat(temporary_2,"/t10k-images-idx3-ubyte"),"rb");
+    if(fptr2 == NULL)
+    {
+        printf("Error!");   
+        exit(1);             
+    }
+    read_images(testing_images,fptr2,number_of_test_images);
+    fclose(fptr2);
+}
+
 
 void permute(int *x, int dim){
     //This function takes in input an array of dimension d and permutes its elements
@@ -197,16 +369,23 @@ void split_data()
 {
     //split the data in training and validation
     //I assume number of validation images < number of training images
-    number_of_train_images = train_val_split*number_of_inputs;
+    number_of_train_images = (1-train_val_split)*number_of_inputs;
     number_of_val_images = number_of_inputs - number_of_train_images;
     permute(map_input_images, number_of_inputs);
     for(int i = 0; i < number_of_train_images; i++) {
+        map_training_images[i] = i;
         for(int j = 0; j < input_size; j++) {
             for(int k = 0; k < input_size; k++) {
                 if (i<number_of_val_images)
                     validation_images[i][j][k] = input_images[map_input_images[number_of_train_images+i]][j][k];
                 training_images[i][j][k] = input_images[map_input_images[i]][j][k];
             }
+        }
+        for (int j=0; j<n_classes; j++)
+        {
+            if (i<number_of_val_images)
+                validation_labels[i][j] = input_labels[map_input_images[number_of_train_images+i]][j];
+            training_labels[i][j] = input_labels[map_input_images[i]][j];
         }
     }
 }
@@ -240,15 +419,41 @@ void gaussian_layer_initialization(int n_layer)
     }
 }
 
+void testing_layer_initialization(int n_layer){
+    int dim1 = weights_dim[n_layer][0];
+    int dim2 = weights_dim[n_layer][1];
+    int n_weights=dim1*dim2;
+    int n_neurons=neurons_per_layer[n_layer];//cause the input neurons don't do computations
+    //initialize the weights of the layer with a gaussian distribution
+    for (int i=0; i<dim1; i++)
+    {
+        for (int j=0; j<dim2; j++)
+        {
+            weights[n_layer][i][j] = (i*dim2+j+1)/10.0;
+        }
+    }
+    for (int i=0; i<n_neurons; i++) 
+    {
+        biases[n_layer][i] = (i+1)/10.0;
+    }
+}
+
 void weight_initialization()
 {
     //initialize the weights
+    //printf("%d \n", type_of_initialization);
     switch (type_of_initialization)
     {
     case 1:
         for (int i=0; i<4; i++)
         {
             gaussian_layer_initialization(i);
+        }
+        break;
+    case 5://testing initialization
+        for (int i=0; i<4; i++)
+        {
+            testing_layer_initialization(i);
         }
         break;
     default: //default is gaussian initialization
@@ -306,15 +511,16 @@ float ReLU_derivative(float x)
 }
 //------------------------
 
-int *linearize(int x[input_size][input_size])
+float *linearize(int x[input_size][input_size])
 {
     //takes an image and compress it to one dimension
-    static int y[input_size*input_size];
+    //also convert to float since the layers take float arrays
+    static float y[input_size*input_size];
     for (int i=0; i<input_size; i++)
     {
         for (int j=0; j<input_size; j++)
         {
-            y[i*input_size+j] = x[i][j];
+            y[i*input_size+j] = (float)x[i][j];
         }
     }
     return y;
@@ -323,10 +529,10 @@ int *linearize(int x[input_size][input_size])
 
 //-----------------------
 //inference
-void neuron_output(int neuron_index, int layer_index, int *input, int activ_function)
+void neuron_output(int neuron_index, int layer_index, float *input, int activ_function)
 {
     //gives the output of a single neuron
-    int input_dimension=weights_dim[layer_index][0];
+    int input_dimension=weights_dim[layer_index][1];
     activations[layer_index][neuron_index]=0;
     for (int i=0; i<input_dimension; i++)
     {
@@ -350,7 +556,7 @@ void neuron_output(int neuron_index, int layer_index, int *input, int activ_func
     }
 }
 
-void layer_output(int *input, int layer_index, int activ_function)
+void layer_output(float *input, int layer_index, int activ_function)
 {
     //compute the output of a single layer
     int n_neurons = neurons_per_layer[layer_index];
@@ -363,7 +569,7 @@ void layer_output(int *input, int layer_index, int activ_function)
 //i use this function only for inference. During training is called by learn_example
 void forward_propagation(int input[input_size][input_size])
 {
-    int *input_linear = linearize(input);
+    float *input_linear = linearize(input);
     for (int i=0;i<4;i++)
     {
         if (i==0){
@@ -390,11 +596,11 @@ void forward_propagation(int input[input_size][input_size])
 
 //Compute dw and db and add to global arrays
 //If you want to update the global for the single example recall to reset the weights
-void learn_example(int input[input_size][input_size])
+void learn_example(int index_of_example)
 {
-    forward_propagation(input);
-    error_on_batch +=loss_on_example(type_of_loss);
-    int *input_linear = linearize(input);
+    forward_propagation(training_images[index_of_example]);
+    error_on_batch +=loss_on_example(training_labels[index_of_example],type_of_loss);
+    float *input_linear = linearize(training_images[index_of_example]);
     float deltas[4][max_neurons_per_layer];
     for (int l=3; l>=0; l--)//i start from the last layer 
     {
@@ -404,10 +610,10 @@ void learn_example(int input[input_size][input_size])
                 switch (type_of_loss)
                 {
                 case 0: //log likelihood
-                    deltas[l][i] = training_labels[l][i]-outputs[l][i];
+                    deltas[l][i] = training_labels[index_of_example][i]-outputs[l][i];
                     break;
                 default: // log likelihood
-                    deltas[l][i] = training_labels[l][i]-outputs[l][i];
+                    deltas[l][i] = training_labels[index_of_example][i]-outputs[l][i];
                     break;
                 }
             }
@@ -499,7 +705,16 @@ void learn_batch(int batch_index)
     {
         int ind=i%number_of_train_images;//so that if the training dimension is not exactly 
         //a multiple of the batch size i have no error (i start taking again from the i=0)
-        learn_example(training_images[map_training_images[i]]);
+        learn_example(map_training_images[i]);
+        //printf("Example %d: ",i);
+        /*for (int j=0;j<10;j++){
+            printf("%.3f ",outputs[3][j]);
+        }*/
+        /*for (int j=0;j<neurons_per_layer[1];j++){
+            printf("%.3f ",outputs[1][j]);
+        }*/
+        //print_image(training_images[map_training_images[i]]);
+        //printf("\n");
         // i didn't sort the images in training batches, i've only sorted the map
     }
     average_dw_db(minibatch_size);
@@ -514,6 +729,10 @@ void learn_epoch()
     int n_batches=number_of_train_images/minibatch_size;//in this way 2.8=2 -> i loose last batch
     //int n_batches=ceil(number_of_train_images/minibatch_size); //in this way i round the value
     //int n_batches=number_of_train_images/minibatch_size+1;// i always round up (but i take one more if divisible)
+    
+    if(type_of_shuffling==1)
+        permute(map_training_images, number_of_train_images);
+
     for (int i=0;i<n_batches;i++){
         learn_batch(i);
         error_on_epoch+=error_on_batch;
@@ -560,29 +779,30 @@ float mean_squared_error(int *t, float *y, int dim)
 //---------------------------
 //metrics
 //this has to be applied after the forward pass function
-float loss_on_example(int t_loss)
+float loss_on_example(int *label,int t_loss)
 {
     //takes in input the type of loss function
     switch (t_loss){
         case 0: //log likelihood
-            return log_likelihood(training_labels,outputs[3],neurons_output_layer);
+            return log_likelihood(label,outputs[3],neurons_output_layer);
             break;
         case 1: //mse
-            return mean_squared_error(training_labels,outputs[3],neurons_output_layer);
+            return mean_squared_error(label,outputs[3],neurons_output_layer);
             break;
         default: // log likelihood
-            return log_likelihood(training_labels,outputs[3],neurons_output_layer);
+            return log_likelihood(label,outputs[3],neurons_output_layer);
             break;
     }
 }
 
-float accuracy(int *input_examples[input_size][input_size],int *input_labels[n_classes], int dim)
+float accuracy(int (*input_examples)[input_size][input_size],int *input_labels[n_classes], int dim)
 {
     int successes=0;
     int total=dim;
     for (int i=0;i<dim;i++){
         forward_propagation(input_examples[i]);
-        if (get_best_class(outputs[3])==get_best_class(input_labels)){
+        float label[n_classes];
+        if (get_best_class(outputs[3])==get_best_class(int_to_float(label,input_labels[i],n_classes))){
             successes+=1;
         }
     }
@@ -623,9 +843,9 @@ void save_model()
 //------------------------------------
 //retrieval functions
 //apply to outputs after a forward propagation
-int get_best_class(int input[n_classes])
+int get_best_class(float input[n_classes])
 {
-    int max = input[0]; // Assume first output is the max initially
+    float max = input[0]; // Assume first output is the max initially
     int ind=0; //index of max element
     for (int i = 1; i < n_classes; i++) {
         if (input[i] > max) {
