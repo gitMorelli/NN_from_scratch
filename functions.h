@@ -14,6 +14,7 @@
 #define n_classes 10
 #define max_neurons_per_layer 1000
 #define PI 3.14159265
+#define max_hidden_layers 3
 
 static char main_folder_name[max_file_name_length];
 
@@ -27,19 +28,21 @@ static int validation_images[max_training_images][input_size][input_size];
 static int validation_labels[max_training_images][n_classes];
 static int map_training_images[max_training_images];//map that keeps the ordering of the training images
 static int map_input_images[max_training_images]; //map that keeps the ordering of the input images
-static float weights[4][max_neurons_per_layer][max_neurons_per_layer]; //weights for each layer
-static int weights_dim[4][2]; //dimensions of the weights for each layer
-static float biases[4][max_neurons_per_layer]; //biases for each layer
-static float activations[4][max_neurons_per_layer];
-static float outputs[4][max_neurons_per_layer];
-static float dw[4][max_neurons_per_layer][max_neurons_per_layer]; //weight variation for each layer
-static float db[4][max_neurons_per_layer]; //bias variation for each layer
+static float weights[max_hidden_layers+1][max_neurons_per_layer][max_neurons_per_layer]; //weights for each layer
+static int weights_dim[max_hidden_layers+1][2]; //dimensions of the weights for each layer
+static float biases[max_hidden_layers+1][max_neurons_per_layer]; //biases for each layer
+static float activations[max_hidden_layers+1][max_neurons_per_layer];
+static float outputs[max_hidden_layers+1][max_neurons_per_layer];
+static float dw[max_hidden_layers+1][max_neurons_per_layer][max_neurons_per_layer]; //weight variation for each layer
+static float db[max_hidden_layers+1][max_neurons_per_layer]; //bias variation for each layer
 
+
+static int number_of_layers;
 static int number_of_inputs;
 static int number_of_val_images;
 static int number_of_train_images;
 static int number_of_test_images;
-static int neurons_per_layer[4];//number of neurons per each layer
+static int neurons_per_layer[max_hidden_layers+1];//number of neurons per each layer
 static int neurons_output_layer=10; //the output layer has 10 neurons, one for each digit
 static int neurons_input_layer=input_size*input_size; //the input layer has the same number of neurons as the number of pixels in the image
 static int type_of_activation; //0 for sigmoid, 1 for ReLU
@@ -47,6 +50,8 @@ static int type_of_loss; //0 for Log-likelihood, 1 for mean squared error
 static int type_of_initialization; //0 for random, 1 for gaussian
 static int type_of_shuffling; //0 for no shuffling, 1 for shuffling
 static float learning_rate; //the learning rate of the model
+static float momentum;
+static int type_of_optimization=0; //0 for SGD, 1 for momentum, 2 for nesterov
 static float train_val_split; 
 static int minibatch_size;
 static int number_of_epochs;
@@ -68,9 +73,8 @@ void permute(int *x, int dim);
 void set_number_of_inputs(int n_inputs, int n_test_images);
 void split_data();
 float rand_normal(float mu, float sigma);
-void define_network_structure(int npl1, int npl2, int npl3, int activation, 
-int initialization);
-void define_training_parameters(int n_epochs,float lr, int loss, int shuffling, float error);
+void define_network_structure(int *npl,int n_layers, int activation, int initialization);
+void define_training_parameters(int n_epochs,float lr, int loss, int shuffling, float error, int opt, float mom);
 float ReLU(float x);
 float sigmoid(float x);
 float softmax(float *x, int dim);
@@ -96,6 +100,9 @@ int get_best_class(float input[n_classes]);
 float accuracy(int (*input_examples)[input_size][input_size],int *input_labels[n_classes], int dim);
 float loss_on_example(int *label,int t_loss);
 void testing_layer_initialization(int n_layer);
+void reset_dw_db_prev();
+float optimizer_w(float delta, float input, float dw_prev);
+float optimizer_b(float delta, float db_prev);
 
 float *int_to_float(float *y,int *x, int dim){
     for (int i=0; i<dim; i++){
@@ -208,17 +215,19 @@ void set_number_of_inputs(int n_inputs, int n_test_images)
     }
 }
 
-void define_network_structure(int npl1, int npl2, int npl3, int activation, int initialization)
+void define_network_structure(int *npl, int n_hidden_layers, int activation, int initialization)
 {
+    number_of_layers = n_hidden_layers+1;
     //neurons_per_layer[0] = neurons_input_layer;
-    neurons_per_layer[0] = npl1;
-    neurons_per_layer[1] = npl2;
-    neurons_per_layer[2] = npl3;
-    neurons_per_layer[3] = neurons_output_layer;
+    for (int i=0; i<n_hidden_layers; i++)
+    {
+        neurons_per_layer[i] = npl[i];
+    }
+    neurons_per_layer[n_hidden_layers] = neurons_output_layer;
     type_of_activation = activation;
     type_of_initialization = initialization;
     //determine the weight matrices dimensions
-    for (int i=0; i<4; i++)
+    for (int i=0; i<number_of_layers; i++)
     {
         weights_dim[i][0] = neurons_per_layer[i];
         if(i==0)
@@ -228,13 +237,15 @@ void define_network_structure(int npl1, int npl2, int npl3, int activation, int 
     }
 }
 
-void define_training_parameters(int n_epochs,float lr, int loss, int shuffling, float error)
+void define_training_parameters(int n_epochs,float lr, int loss, int shuffling, float error, int opt, float mom)
 {
     type_of_loss = loss;
     type_of_shuffling = shuffling;
     learning_rate=lr;
     number_of_epochs = n_epochs;
     threshold_error=error;
+    type_of_optimization = opt;
+    momentum=mom;
 }
 
 void load_training_set()
@@ -410,12 +421,12 @@ void gaussian_layer_initialization(int n_layer)
     {
         for (int j=0; j<dim2; j++)
         {
-            weights[n_layer][i][j] = rand_normal(0,1.0/n_weights);
+            weights[n_layer][i][j] = rand_normal(0,sqrt(1.0/weights_dim[n_layer][1]));
         }
     }
     for (int i=0; i<n_neurons; i++) 
     {
-        biases[n_layer][i] = rand_normal(0,1.0/n_weights);
+        biases[n_layer][i] = rand_normal(0,sqrt(1.0/weights_dim[n_layer][1]));
     }
 }
 
@@ -445,19 +456,19 @@ void weight_initialization()
     switch (type_of_initialization)
     {
     case 1:
-        for (int i=0; i<4; i++)
+        for (int i=0; i<number_of_layers; i++)
         {
             gaussian_layer_initialization(i);
         }
         break;
     case 5://testing initialization
-        for (int i=0; i<4; i++)
+        for (int i=0; i<number_of_layers; i++)
         {
             testing_layer_initialization(i);
         }
         break;
     default: //default is gaussian initialization
-        for (int i=0; i<4; i++)
+        for (int i=0; i<number_of_layers; i++)
         {
             gaussian_layer_initialization(i);
         }
@@ -570,12 +581,12 @@ void layer_output(float *input, int layer_index, int activ_function)
 void forward_propagation(int input[input_size][input_size])
 {
     float *input_linear = linearize(input);
-    for (int i=0;i<4;i++)
+    for (int i=0;i<number_of_layers;i++)
     {
         if (i==0){
             layer_output(input_linear, i, type_of_activation);
         }
-        else if(i==3)
+        else if(i==number_of_layers-1)
         {
             layer_output(outputs[i-1], i, 2);
             softmax(outputs[i], neurons_output_layer);
@@ -601,12 +612,12 @@ void learn_example(int index_of_example)
     forward_propagation(training_images[index_of_example]);
     error_on_batch +=loss_on_example(training_labels[index_of_example],type_of_loss);
     float *input_linear = linearize(training_images[index_of_example]);
-    float deltas[4][max_neurons_per_layer];
-    for (int l=3; l>=0; l--)//i start from the last layer 
+    float deltas[number_of_layers][max_neurons_per_layer];
+    for (int l=number_of_layers-1; l>=0; l--)//i start from the last layer 
     {
         for(int i=0; i<neurons_per_layer[l]; i++)
         {
-            if (l==3){
+            if (l==number_of_layers-1){
                 switch (type_of_loss)
                 {
                 case 0: //log likelihood
@@ -638,24 +649,60 @@ void learn_example(int index_of_example)
             }
             if(l==0){
                 for (int j=0; j<neurons_input_layer; j++)
-                    dw[l][i][j] += learning_rate*deltas[l][i]*input_linear[j];
+                    dw[l][i][j] += optimizer_w(deltas[l][i],input_linear[j],dw[l][i][j]);
             }
             else{
                 for (int j=0; j<neurons_per_layer[l-1]; j++)
                 {
                     //compute the dw for the layer
-                    dw[l][i][j] += learning_rate*deltas[l][i]*outputs[l][j];
+                    dw[l][i][j] += optimizer_w(deltas[l][i],outputs[l][j],dw[l][i][j]);
+                    /*if(l==number_of_layers-1){
+                        printf("%.3f ",dw[l][1][2]);
+                    }*/
                 }
+                /*if(l==number_of_layers-1){
+                    printf("\n");
+                }*/
             }
-            db[l][i] += learning_rate*deltas[l][i];
+            db[l][i] += optimizer_b(deltas[l][i],db[l][i]);
             //for the first layer the outputs are the linearized inputs
         }
     }
 }
 
+float optimizer_w(float delta, float input, float dw_prev){
+    switch (type_of_optimization)
+    {
+    case 0://sgd
+        return learning_rate*delta*input;
+        break;
+    case 1:
+        return learning_rate*delta*input+momentum*dw_prev;
+        break;
+    default: //sgd
+        return learning_rate*delta*input;
+        break;
+    }
+}
+
+float optimizer_b(float delta, float db_prev){
+    switch (type_of_optimization)
+    {
+    case 0://sgd
+        return learning_rate*delta;
+        break;
+    case 1:
+        return learning_rate*delta+momentum*db_prev;
+        break;
+    default: //sgd
+        return learning_rate*delta;
+        break;
+    }
+}
+
 void reset_dw_db()
 {   
-    for (int l=0; l<4; l++)
+    for (int l=0; l<number_of_layers; l++)
     {
         int dim1 = weights_dim[l][0];
         int dim2 = weights_dim[l][1];
@@ -670,7 +717,7 @@ void reset_dw_db()
 void average_dw_db(int M)
 {   
     //M is batch size if you are averaging on a mini-batch
-    for (int l=0; l<4; l++)
+    for (int l=0; l<number_of_layers; l++)
     {
         int dim1 = weights_dim[l][0];
         int dim2 = weights_dim[l][1];
@@ -683,7 +730,7 @@ void average_dw_db(int M)
 }
 
 void update_w_b(){
-    for (int l=0; l<4; l++)
+    for (int l=0; l<number_of_layers; l++)
     {
         int dim1 = weights_dim[l][0];
         int dim2 = weights_dim[l][1];
@@ -750,6 +797,7 @@ void train_network()
         learn_epoch();
         current_epoch++;
         current_error=error_on_epoch;
+        printf("Current epoch=%d, current error=%.3f\n",current_epoch,current_error);
     }while(current_epoch<number_of_epochs && current_error>threshold_error);
 }
 //----------------------
@@ -784,13 +832,13 @@ float loss_on_example(int *label,int t_loss)
     //takes in input the type of loss function
     switch (t_loss){
         case 0: //log likelihood
-            return log_likelihood(label,outputs[3],neurons_output_layer);
+            return log_likelihood(label,outputs[number_of_layers-1],neurons_output_layer);
             break;
         case 1: //mse
-            return mean_squared_error(label,outputs[3],neurons_output_layer);
+            return mean_squared_error(label,outputs[number_of_layers-1],neurons_output_layer);
             break;
         default: // log likelihood
-            return log_likelihood(label,outputs[3],neurons_output_layer);
+            return log_likelihood(label,outputs[number_of_layers-1],neurons_output_layer);
             break;
     }
 }
@@ -802,7 +850,7 @@ float accuracy(int (*input_examples)[input_size][input_size],int *input_labels[n
     for (int i=0;i<dim;i++){
         forward_propagation(input_examples[i]);
         float label[n_classes];
-        if (get_best_class(outputs[3])==get_best_class(int_to_float(label,input_labels[i],n_classes))){
+        if (get_best_class(outputs[number_of_layers-1])==get_best_class(int_to_float(label,input_labels[i],n_classes))){
             successes+=1;
         }
     }
@@ -859,6 +907,6 @@ int get_best_class(float input[n_classes])
 float *get_probabilities(int input[input_size][input_size])
 {
     forward_propagation(input);
-    return outputs[3];
+    return outputs[number_of_layers-1];
 }
 //-------------------------------------

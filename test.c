@@ -13,6 +13,8 @@
 
 
 int main() {
+    unsigned int seed = 12345; // Example fixed seed
+    srand(seed);
     // Your code here
     //generic_initialization();
     //menu_loop();
@@ -37,7 +39,10 @@ int main() {
     test_forward_propagation();
     test_loss_on_example();
     test_get_best_class();
-    test_learn_example();*/
+    test_learn_example();
     test_learn_batch();
+    test_learn_epoch();
+    test_training_loop();*/
+    test_training_loop();
     return 0;
 }

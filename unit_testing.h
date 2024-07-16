@@ -24,7 +24,8 @@ void test_set_folder_name()
 }
 
 void test_define_network_structure(){
-    define_network_structure(3,6,8, 0, 1);
+    int x[3] = {3,6,8};
+    define_network_structure(x,3,0, 1);
     assert(weights_dim[0][1] == 28*28 && weights_dim[0][0] == 3);
     assert(weights_dim[3][0] == 10 && weights_dim[3][1] == 8);
     assert(weights_dim[1][0]==6 && weights_dim[1][1]==3);
@@ -125,7 +126,8 @@ void test_split_data(){
 }
 
 void test_gaussian_layer_initialization(){
-    define_network_structure(10, 5, 7, 0, 0);
+    int x[3] = {10,5,7};
+    define_network_structure(x,3, 0, 0);
     gaussian_layer_initialization(0);
     float sum=0;
     for (int i=0; i<10; i++)
@@ -182,7 +184,8 @@ void test_gaussian_layer_initialization(){
 }
 
 void test_weight_initialization(){
-    define_network_structure(10, 5, 7, 0, 1);
+    int x[3] = {10,5,7};
+    define_network_structure(x,3, 0, 1);
     weight_initialization();
     printf("\n");
     for (int i=0;i<10;i++)
@@ -231,6 +234,8 @@ void test_linearize(){
 //definisco dei valori per i bias che posso controllare
 //testo sia no activation function che sigmoid
 void test_neuron_output(){
+    int L[3] = {2,3,5};
+    define_network_structure(L,3, 0, 1);
     weights_dim[1][0] = 3;
     weights_dim[1][1] = 2;
     weights[1][0][0] = 0.1;
@@ -257,6 +262,8 @@ void test_neuron_output(){
 }
 
 void test_layer_output(){
+    int L[3] = {2,3,5};
+    define_network_structure(L,3, 0, 1);
     weights_dim[1][0] = 3;
     weights_dim[1][1] = 2;
     weights[1][0][0] = 0.1;
@@ -282,7 +289,8 @@ void test_layer_output(){
 }
 
 void test_forward_propagation(){
-    define_network_structure(2, 3, 2, 0, 0);
+    int L[3] = {2,3,2};
+    define_network_structure(L,3, 0, 0);
     int x[28][28];
     for (int i=0;i<28;i++){
         for (int j=0;j<28;j++){
@@ -316,6 +324,8 @@ void test_forward_propagation(){
 }
 
 void test_loss_on_example(){
+    int L[3] = {2,3,5};
+    define_network_structure(L,3, 0, 1);
     int x[10] = {0,0,0,0,0,0,0,0,0,1};
     for (int i=0;i<10;i++){
         outputs[3][i] = 0.1;
@@ -340,12 +350,13 @@ void test_get_best_class(){
 //-> i can make a train loop on the single image and then test the output
 //I should also check that the weights, deltas etc are not zero
 void test_learn_example(){
-    define_network_structure(10, 6, 4, 0, 1);
+    int L[3] = {10,6,4};
+    define_network_structure(L,3, 0, 1);
     weight_initialization();
     set_folder_name("input_folder");
     set_number_of_inputs(10, 10);
     load_training_set();
-    define_training_parameters(10,0.1, 0, 0, 0.00001);
+    define_training_parameters(10,0.1, 0, 0, 0.00001,0,0.9);
     /*print_image(input_images[1]); //is a 0
     for(int i = 0; i < 10; i++)
     {
@@ -377,15 +388,14 @@ void test_learn_example(){
 }
 
 void test_learn_batch(){
-    unsigned int seed = 12345; // Example fixed seed
-    srand(seed);
-    define_network_structure(100, 50 , 25, 0, 1);
+    int L[1] = {64};
+    define_network_structure(L,1, 0, 1);
     weight_initialization();
     set_folder_name("input_folder");
     set_number_of_inputs(100, 10);
     load_training_set();
-    define_training_parameters(10,0.1, 0, 0, 0.00001);
-    set_train_val(50, 0.5);
+    define_training_parameters(10,1, 0, 0, 0.00001,0,0.9);
+    set_train_val(10, 0.5);
     split_data();
     float label[n_classes];
     for (int i=0;i<number_of_train_images;i++){
@@ -406,6 +416,7 @@ void test_learn_batch(){
         printf("%d ",get_best_class(int_to_float(label,training_labels[map_training_images[i]],n_classes)));
     }
     printf("\n");
+    printf("BATCH\n");
     int batch_index=2;
     int start = batch_index*minibatch_size;
     int end = (batch_index+1)*minibatch_size;
@@ -428,10 +439,73 @@ void test_learn_batch(){
     for (int i=start;i<end;i++){
         forward_propagation(training_images[map_training_images[i]]);
         for (int j=0;j<10;j++){
-            printf("%f ",outputs[3][j]);
+            printf("%f ",outputs[number_of_layers-1][j]);
         }
-        printf("%d ",get_best_class(outputs[3]));
+        printf("%d ",get_best_class(outputs[number_of_layers-1]));
         printf("\n");
     }
     printf("\n");
+}
+
+void test_learn_epoch(){
+    int L[1] = {32};
+    define_network_structure(L,1, 0, 1);
+    weight_initialization();
+    set_folder_name("input_folder");
+    set_number_of_inputs(10000, 10);
+    load_training_set();
+    define_training_parameters(10,1, 0, 1, 0.00001,0,0.9);
+    set_train_val(100, 0.1);
+    split_data();
+    learn_epoch();
+    int batch_index=5;
+    int start = batch_index*minibatch_size;
+    int end = (batch_index+1)*minibatch_size;
+    float label[n_classes];
+    for (int i=start; i<end; i++)
+    {
+        printf("%d ",get_best_class(int_to_float(label,training_labels[map_training_images[i]],n_classes)));
+    }
+    printf("\n");
+    printf("Results\n");
+    for (int i=start;i<end;i++){
+        forward_propagation(training_images[map_training_images[i]]);
+        for (int j=0;j<10;j++){
+            printf("%f ",outputs[number_of_layers-1][j]);
+        }
+        printf("%d ",get_best_class(outputs[number_of_layers-1]));
+        printf("\n");
+    }
+    printf("\n");
+}
+
+void test_training_loop(){
+    int L[1] = {10};
+    define_network_structure(L,1, 0, 1);
+    weight_initialization();
+    set_folder_name("input_folder");
+    set_number_of_inputs(100, 10);
+    load_training_set();
+    define_training_parameters(10,0.1, 0, 1, 0.00001,1,0.9);
+    set_train_val(10, 0.1);
+    split_data();
+    train_network();
+    int batch_index=5;
+    int start = batch_index*minibatch_size;
+    int end = (batch_index+1)*minibatch_size;
+    float label[n_classes];
+    printf("Results on ten random images\n");
+    for (int i=0; i<10; i++)
+    {
+        printf("%d ",get_best_class(int_to_float(label,training_labels[map_training_images[i]],n_classes)));
+    }
+    printf("\n");
+    for (int i=0;i<10;i++){
+        forward_propagation(training_images[map_training_images[i]]);
+        for (int j=0;j<10;j++){
+            printf("%f ",outputs[number_of_layers-1][j]);
+        }
+        printf("%d ",get_best_class(outputs[number_of_layers-1]));
+        printf("\n");
+    }
 }
