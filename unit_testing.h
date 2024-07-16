@@ -215,18 +215,33 @@ void test_softmax(){
     assert(sum == 1);
 }
 
-void test_linearize(){
+void test_softmax_stable(){
+    float x[3] = {1,2,3};
+    float y[3] = {1,2,3};
+    softmax(x,3);
+    softmax_stable(y,3);
+    //printf("%f %f %f\n",x[0],x[1],x[2]);
+    assert(fabs(x[0] - y[0])<=0.0001);
+    assert(fabs(x[1] - y[1])<=0.0001);
+    assert(fabs(x[2] - y[2])<=0.0001);
+}
+
+void test_lin_and_norm(){
     int x[28][28];
     for (int i=0;i<28;i++){
         for (int j=0;j<28;j++){
             x[i][j] = i*28+j+1;
         }
     }   
-    float *y=linearize(x);
+    float *y=lin_and_norm(x);
     for (int i=0;i<28*28;i++){
         //printf("%f ",y[i]);
     }
-    assert(y[0] == 1 && y[1] == 2 && y[28] == 29 && y[29] == 30);
+    //printf("%f \n",y[0]*255);
+    assert(fabs(y[0] - 1/255.0)<=0.0001);
+    assert(fabs(y[1] - 2/255.0)<=0.0001);
+    assert(fabs(y[28] - 29/255.0));
+    assert(fabs(y[29] - 30/255.0));
 }
 
 //definisco due layer con due e tre neuroni rispettivamente
@@ -297,7 +312,7 @@ void test_forward_propagation(){
             x[i][j] = 0;
         }
     }
-    x[0][1]=1;
+    x[0][1]=255.0;
     type_of_initialization=5;
     weight_initialization();
     weights[0][0][1] = 0.2;
@@ -480,13 +495,13 @@ void test_learn_epoch(){
 }
 
 void test_training_loop(){
-    int L[1] = {10};
+    int L[1] = {64};
     define_network_structure(L,1, 0, 1);
     weight_initialization();
     set_folder_name("input_folder");
-    set_number_of_inputs(100, 10);
+    set_number_of_inputs(10000, 10);
     load_training_set();
-    define_training_parameters(10,0.1, 0, 1, 0.00001,1,0.9);
+    define_training_parameters(10,0.1, 0, 1, 0.00001,2,0.9);
     set_train_val(10, 0.1);
     split_data();
     train_network();
@@ -495,17 +510,101 @@ void test_training_loop(){
     int end = (batch_index+1)*minibatch_size;
     float label[n_classes];
     printf("Results on ten random images\n");
-    for (int i=0; i<10; i++)
-    {
-        printf("%d ",get_best_class(int_to_float(label,training_labels[map_training_images[i]],n_classes)));
-    }
-    printf("\n");
-    for (int i=0;i<10;i++){
+    for (int i=0;i<20;i++){
         forward_propagation(training_images[map_training_images[i]]);
         for (int j=0;j<10;j++){
             printf("%f ",outputs[number_of_layers-1][j]);
         }
         printf("%d ",get_best_class(outputs[number_of_layers-1]));
+        printf(" | %d ",get_best_class(int_to_float(label,training_labels[map_training_images[i]],n_classes)));
+        printf("\n");
+    }
+}
+
+void test_inference_on_set(){
+    int L[1] = {64};
+    define_network_structure(L,1, 0, 1);
+    weight_initialization();
+    set_folder_name("input_folder");
+    set_number_of_inputs(10000, 10);
+    load_training_set();
+    define_training_parameters(10,0.1, 0, 1, 0.00001,2,0.9);
+    set_train_val(10, 0.1);
+    split_data();
+    train_network();
+    int batch_index=5;
+    int start = batch_index*minibatch_size;
+    int end = (batch_index+1)*minibatch_size;
+    float label[n_classes];
+    int test_images[20][28][28];
+    int test_labels[20][10];
+    for (int i=0;i<20;i++){
+        for (int j=0;j<28;j++){
+            for (int k=0;k<28;k++){
+                test_images[i][j][k] = training_images[map_training_images[i]][j][k];
+            }
+        }
+        forward_propagation(training_images[map_training_images[i]]);
+        for (int j=0;j<10;j++){
+            test_labels[i][j] = training_labels[map_training_images[i]][j];
+            printf("%f ",outputs[number_of_layers-1][j]);
+        }
+        printf("%d ",get_best_class(outputs[number_of_layers-1]));
+        printf(" | %d ",get_best_class(int_to_float(label,training_labels[map_training_images[i]],n_classes)));
+        printf("\n");
+    }
+    printf("Testing inference on set\n");
+    float probabilities[20][10];
+    inference_on_set(test_images,probabilities,20);
+    for (int i=0;i<20;i++){
+        for (int j=0;j<10;j++){
+            printf("%f ",probabilities[i][j]);
+        }
+        printf("\n");
+    }
+}
+
+void test_compute_metrics(){
+    float probabilities[10][10];
+    int gold_standards[10][10];
+    printf("Probabilities vs Gold standards\n");
+    for (int i=0;i<10;i++){
+        for (int j=0;j<10;j++){
+            probabilities[i][j] = 0;
+        }
+        int ind = rand() % 3;
+        printf("%d ",ind);
+        probabilities[i][ind] = 1;
+    }
+    printf("\n");
+    for (int i=0;i<10;i++){
+        for (int j=0;j<10;j++){
+            gold_standards[i][j] = 0;
+        }
+        int ind = rand() % 3;
+        printf("%d ",ind);
+        gold_standards[i][ind] = 1;
+    }
+    printf("\n");
+    Metrics M=compute_metrics(probabilities,gold_standards,10);
+    printf("precision scores\n");
+    for (int i=0;i<3;i++){
+        printf("%f ",M.precisions[i]);
+    }
+    printf("\n");
+    printf("Recall scores\n");
+    for (int i=0;i<3;i++){
+        printf("%f ",M.recalls[i]);
+    }
+    printf("\n");
+    printf("global scores\n");
+    printf("Accuracy=%f Macro_recall=%f Macro_precision=%f Micro_recall=%f Micro_precision=%f",
+    M.overall_accuracy,M.macro_recall,M.macro_precision,M.micro_recall,M.micro_precision);
+    printf("\n");
+    for(int i=0;i<2;i++){
+        for(int j=0;j<2;j++){
+            printf("%d ",M.micro_confusion_matrix[i][j]);
+        }
         printf("\n");
     }
 }

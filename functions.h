@@ -58,6 +58,21 @@ static int number_of_epochs;
 static float threshold_error;
 static float error_on_batch;
 static float error_on_epoch;
+typedef struct {
+    //in confusion matrices i have gold as columns and predicted as rows   
+    //in micro confusion matrices i have 1 as first and 0 as second
+    int full_confusion_matrix[10][10];
+    int micro_confusion_matrices[10][2][2];
+    int micro_confusion_matrix[2][2];
+    float overall_accuracy;
+    float macro_precision;
+    float macro_recall;
+    float micro_recall;
+    float micro_precision;
+    float accuracies[10];
+    float precisions[10];
+    float recalls[10];
+} Metrics;
 
 float *int_to_float(float *y,int *x, int dim);
 void printIntegerByteByByte(int number);
@@ -73,11 +88,12 @@ void permute(int *x, int dim);
 void set_number_of_inputs(int n_inputs, int n_test_images);
 void split_data();
 float rand_normal(float mu, float sigma);
-void define_network_structure(int *npl,int n_layers, int activation, int initialization);
+void define_network_structure(int *npl,int n_layers, int activation, int initialization);//should move initialization to other function
 void define_training_parameters(int n_epochs,float lr, int loss, int shuffling, float error, int opt, float mom);
 float ReLU(float x);
 float sigmoid(float x);
 float softmax(float *x, int dim);
+float softmax_stable(float *x, int dim);
 float ReLU_derivative(float x);
 float sigmoid_derivative(float x);
 void gaussian_layer_initialization(int n_layer);
@@ -85,7 +101,7 @@ void weight_initialization();
 void layer_output(float *input, int layer_index, int activ_function);
 void neuron_output(int neuron_index, int layer_index, float *input, int activ_function);
 void forward_propagation(int input[input_size][input_size]);
-float *linearize(int x[input_size][input_size]);
+float *lin_and_norm(int x[input_size][input_size]);
 void learn_example(int input_index);
 void reset_dw_db();
 void average_dw_db(int M);
@@ -97,12 +113,12 @@ float mean_squared_error(int *t, float *y, int dim);
 void train_network();
 float *get_probabilities(int input[input_size][input_size]);
 int get_best_class(float input[n_classes]);
-float accuracy(int (*input_examples)[input_size][input_size],int *input_labels[n_classes], int dim);
 float loss_on_example(int *label,int t_loss);
 void testing_layer_initialization(int n_layer);
-void reset_dw_db_prev();
 float optimizer_w(float delta, float input, float dw_prev);
 float optimizer_b(float delta, float db_prev);
+void load_model(char *filename);
+void save_NN(char *filename);
 
 float *int_to_float(float *y,int *x, int dim){
     for (int i=0; i<dim; i++){
@@ -505,6 +521,29 @@ float softmax(float *x, int dim)
         x[i] = exp(x[i])/sum;
     }
 }
+
+float softmax_stable(float *x, int dim)
+{
+    int i;
+    float sum, max;
+    //I find the maximum
+    for (i = 1, max = x[0]; i < dim; i++) {
+        if (x[i] > max) {
+            max = x[i];
+        }
+    }
+
+    //I can subtract a constant exponent to each exponential term
+    //cause i can collect it both at the numerator and denominator when i compute the output
+    for (i = 0, sum = 0; i < dim; i++) {
+        x[i] = exp(x[i] - max);
+        sum += x[i];
+    }
+
+    for (i = 0; i < dim; i++) {
+        x[i] /= sum;
+    }
+}
 //--------------------------
 
 //------------------------
@@ -522,7 +561,7 @@ float ReLU_derivative(float x)
 }
 //------------------------
 
-float *linearize(int x[input_size][input_size])
+float *lin_and_norm(int x[input_size][input_size])
 {
     //takes an image and compress it to one dimension
     //also convert to float since the layers take float arrays
@@ -531,7 +570,7 @@ float *linearize(int x[input_size][input_size])
     {
         for (int j=0; j<input_size; j++)
         {
-            y[i*input_size+j] = (float)x[i][j];
+            y[i*input_size+j] = (float)x[i][j] / 255.0;
         }
     }
     return y;
@@ -580,7 +619,7 @@ void layer_output(float *input, int layer_index, int activ_function)
 //i use this function only for inference. During training is called by learn_example
 void forward_propagation(int input[input_size][input_size])
 {
-    float *input_linear = linearize(input);
+    float *input_linear = lin_and_norm(input);
     for (int i=0;i<number_of_layers;i++)
     {
         if (i==0){
@@ -589,7 +628,7 @@ void forward_propagation(int input[input_size][input_size])
         else if(i==number_of_layers-1)
         {
             layer_output(outputs[i-1], i, 2);
-            softmax(outputs[i], neurons_output_layer);
+            softmax_stable(outputs[i], neurons_output_layer);
             //the output of the final layer is passed through a softmax not a sigmoid
         }
         else
@@ -611,7 +650,7 @@ void learn_example(int index_of_example)
 {
     forward_propagation(training_images[index_of_example]);
     error_on_batch +=loss_on_example(training_labels[index_of_example],type_of_loss);
-    float *input_linear = linearize(training_images[index_of_example]);
+    float *input_linear = lin_and_norm(training_images[index_of_example]);
     float deltas[number_of_layers][max_neurons_per_layer];
     for (int l=number_of_layers-1; l>=0; l--)//i start from the last layer 
     {
@@ -633,7 +672,12 @@ void learn_example(int index_of_example)
                 float weighted_sum = 0;
                 for (int k=0; k<neurons_per_layer[l+1]; k++)
                 {
-                    weighted_sum += weights[l+1][i][k]*deltas[l+1][k];
+                    if(type_of_optimization==2){
+                        weighted_sum += (weights[l+1][i][k]+momentum*dw[l+1][i][k])*deltas[l+1][k];
+                    }
+                    else{
+                        weighted_sum += weights[l+1][i][k]*deltas[l+1][k];
+                    }
                 }
                 float activ_derivative;
                 switch (type_of_loss)
@@ -843,49 +887,82 @@ float loss_on_example(int *label,int t_loss)
     }
 }
 
-float accuracy(int (*input_examples)[input_size][input_size],int *input_labels[n_classes], int dim)
-{
-    int successes=0;
-    int total=dim;
+void inference_on_set(int (*input_examples)[input_size][input_size], float (*probabilities)[10], int dim){
     for (int i=0;i<dim;i++){
-        forward_propagation(input_examples[i]);
-        float label[n_classes];
-        if (get_best_class(outputs[number_of_layers-1])==get_best_class(int_to_float(label,input_labels[i],n_classes))){
-            successes+=1;
+        float *z=get_probabilities(input_examples[i]);
+        for (int j=0;j<10;j++){
+            probabilities[i][j]=z[j];
         }
     }
-    float accuracy=successes/total;
-    return accuracy;
-}
-/*
-void confusion_matrices(){
-}
-
-float precision()
-{
 
 }
 
-float recall()
-{
-
-}*/
-
-//----------------------------
-
-void test_network()
-{
-    //test the network
-}
-
-void validate_network()
-{
-    //validate the network
-}
-
-void save_model()
-{
-    //save the model
+Metrics compute_metrics(float (*probabilities)[10],int (*input_labels)[n_classes], int dim){
+    Metrics metrics;
+    float epsilon=1e-30;
+    //initialize metrics
+    for (int i=0;i<10;i++){
+        for (int j=0;j<10;j++){
+            metrics.full_confusion_matrix[i][j]=0;
+        }
+        for (int j=0;j<2;j++){
+            for (int k=0;k<2;k++){
+                metrics.micro_confusion_matrix[j][k]=0;
+            }
+        }
+    }
+    //compute confusion matrices
+    for(int i=0;i<dim;i++){
+        int predicted_class=get_best_class(probabilities[i]);
+        float labels[10];
+        int gold_class=get_best_class(int_to_float(labels,input_labels[i],10));
+        metrics.full_confusion_matrix[predicted_class][gold_class]+=1;
+    }
+    // For every class the 00 of the micro-confusion is the [class][class] entry
+    //the 01 is the sum of the [class][not class] entries
+    //the 10 is the sum of the [not class][class] entries
+    //.. the total umber of entries should be dim
+    for(int i=0;i<10;i++){
+        metrics.micro_confusion_matrices[i][0][0]=metrics.full_confusion_matrix[i][i];
+        metrics.micro_confusion_matrices[i][0][1]=0;
+        metrics.micro_confusion_matrices[i][1][0]=0;
+        for(int j=0;j<10;j++){
+            if(j!=i){
+                metrics.micro_confusion_matrices[i][0][1]+=metrics.full_confusion_matrix[i][j];
+                metrics.micro_confusion_matrices[i][1][0]+=metrics.full_confusion_matrix[j][i];
+            }
+        }
+        metrics.micro_confusion_matrices[i][1][1]=dim-metrics.micro_confusion_matrices[i][0][0]
+        -metrics.micro_confusion_matrices[i][0][1]-metrics.micro_confusion_matrices[i][1][0];
+    }
+    metrics.overall_accuracy=0;
+    metrics.macro_precision=0;
+    metrics.macro_recall=0;
+    for(int i=0;i<10;i++){
+        //I didn't find a definition of accuracy per class
+        //metrics.accuracies[i]=metrics.micro_confusion_matrices[i][0][0]/(float)(dim);
+        metrics.overall_accuracy+=metrics.micro_confusion_matrices[i][0][0]/(float)dim;
+        metrics.recalls[i]=metrics.micro_confusion_matrices[i][0][0]/
+        (float)(metrics.micro_confusion_matrices[i][0][0]
+        +metrics.micro_confusion_matrices[i][1][0] + epsilon);
+        metrics.precisions[i]=metrics.micro_confusion_matrices[i][0][0]/
+        (float)(metrics.micro_confusion_matrices[i][0][0]
+        +metrics.micro_confusion_matrices[i][0][1] + epsilon);
+        metrics.macro_recall+=metrics.recalls[i]/10;
+        metrics.macro_precision+=metrics.precisions[i]/10;
+        for (int j=0;j<2;j++){
+            for (int k=0;k<2;k++){
+                metrics.micro_confusion_matrix[j][k]+=metrics.micro_confusion_matrices[i][j][k];
+            }
+        }
+    }
+    metrics.micro_recall=metrics.micro_confusion_matrix[0][0]/
+    (float)(metrics.micro_confusion_matrix[0][0]
+    +metrics.micro_confusion_matrix[1][0]+epsilon);
+    metrics.micro_precision=metrics.micro_confusion_matrix[0][0]/
+    (float)(metrics.micro_confusion_matrix[0][0]+
+    metrics.micro_confusion_matrix[0][1]+epsilon);
+    return metrics;
 }
 
 //------------------------------------
@@ -910,3 +987,78 @@ float *get_probabilities(int input[input_size][input_size])
     return outputs[number_of_layers-1];
 }
 //-------------------------------------
+
+
+//----------------------------
+void save_NN(char *filename) {
+    char temporary[100];
+    strcpy(temporary,main_folder_name);
+    strcat(temporary,"/models/");
+    FILE *file = fopen(strcat(temporary,filename), "w");
+    if (file == NULL) return;
+    //save network structure
+    fprintf(file, "%d\n", number_of_layers-1);//number of hidden layers
+    for(int i=0;i<number_of_layers-1;i++){
+        fprintf(file, "%d ", neurons_per_layer[i]);
+    }
+    fprintf(file, "\n");
+    fprintf(file, "%d\n", type_of_activation);//activation function
+
+    // Save dw
+    for(int l=0;l<number_of_layers;l++){
+        for (int i = 0; i < weights_dim[l][0]; i++) {
+            for (int j = 0; j < weights_dim[l][1]; j++) {
+                fprintf(file, "%f ", weights[l][i][j]);
+            }
+            fprintf(file, "\n");
+        }
+    }
+
+    // Save db
+    for (int l = 0; l < number_of_layers; l++) {
+        for (int i = 0; i < neurons_per_layer[l]; i++) {
+            fprintf(file, "%f ", biases[l][i]);
+        }
+        fprintf(file, "\n");
+    }
+
+    fclose(file);
+}
+
+void load_model(char *filename)
+{
+    char temporary[100];
+    strcpy(temporary,main_folder_name);
+    strcat(temporary,"/models/");
+    FILE *file = fopen(strcat(temporary,filename), "r");
+    if (file == NULL) return;
+    
+    int n_hid_layers=0;
+    int npl[n_hid_layers];
+    int t_activ=0;
+    fscanf(file, "%d", &n_hid_layers);//number of hidden layers
+    for(int i=0;i<n_hid_layers;i++){
+        fscanf(file, "%d", &npl[i]);
+    }
+    fscanf(file, "%d\n", &t_activ);//activation function
+
+    define_network_structure(npl,n_hid_layers, t_activ, 0);
+
+    // load dw
+    for(int l=0;l<number_of_layers;l++){
+        for (int i = 0; i < weights_dim[l][0]; i++) {
+            for (int j = 0; j < weights_dim[l][1]; j++) {
+                fscanf(file, "%f", &weights[l][i][j]);
+            }
+        }
+    }
+
+    // load db
+    for (int l = 0; l < number_of_layers; l++) {
+        for (int i = 0; i < neurons_per_layer[l]; i++) {
+            fscanf(file, "%f", &biases[l][i]);
+        }
+    }
+
+    fclose(file);
+}

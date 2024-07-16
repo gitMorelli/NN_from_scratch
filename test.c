@@ -33,7 +33,7 @@ int main() {
     test_gaussian_layer_initialization();
     test_weight_initialization();
     test_softmax();
-    test_linearize();
+    test_lin_and_norm();
     test_neuron_output();
     test_layer_output();
     test_forward_propagation();
@@ -42,7 +42,12 @@ int main() {
     test_learn_example();
     test_learn_batch();
     test_learn_epoch();
-    test_training_loop();*/
     test_training_loop();
+    test_training_loop();
+    test_softmax_stable();
+    test_training_loop();
+    //test_accuracy();
+    test_inference_on_set();
+    test_compute_metrics();*/
     return 0;
 }
