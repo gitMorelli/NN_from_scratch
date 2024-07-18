@@ -1,5 +1,5 @@
 #include "functions.h"
-//#include "graphics.h"
+#include "graphics.h"
 #include "unit_testing.h"
 #include <allegro5/allegro.h>
 #include <allegro5/allegro_primitives.h>
@@ -15,10 +15,8 @@
 int main() {
     unsigned int seed = 12345; // Example fixed seed
     srand(seed);
-    // Your code here
-    //generic_initialization();
-    //menu_loop();
-    //interactive_loop();
+    //training_loop();
+    //srand(time(NULL));
 
     //unit tests
     /*
@@ -48,6 +46,9 @@ int main() {
     test_training_loop();
     //test_accuracy();
     test_inference_on_set();
-    test_compute_metrics();*/
+    test_compute_metrics();
+    test_testing_loop();
+    test_training_loop();*/
+    test_training_graphics();
     return 0;
 }

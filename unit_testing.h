@@ -519,6 +519,12 @@ void test_training_loop(){
         printf(" | %d ",get_best_class(int_to_float(label,training_labels[map_training_images[i]],n_classes)));
         printf("\n");
     }
+    printf("Testing inference on validation set\n");
+    float probabilities[number_of_val_images][10];
+    inference_on_set(validation_images, probabilities, number_of_val_images);
+    Metrics M=compute_metrics(probabilities,validation_labels, number_of_val_images);
+    printf("Accuracy=%f",M.overall_accuracy);
+
 }
 
 void test_inference_on_set(){
@@ -607,4 +613,15 @@ void test_compute_metrics(){
         }
         printf("\n");
     }
+}
+
+void test_testing_loop(){
+    set_folder_name("input_folder");
+    set_number_of_inputs(60000, 10000);
+    load_test_set();
+    testing_loop();
+}
+
+void test_training_graphics(){
+    training_loop();
 }
