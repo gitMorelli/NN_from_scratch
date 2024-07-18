@@ -34,7 +34,7 @@ static struct Box{
     int x2;
     int y2;
     ALLEGRO_COLOR color;
-    char text[15];
+    char text[100];
     int text_position;
     ALLEGRO_COLOR text_color;
 } ;
@@ -61,6 +61,73 @@ void display_next_image(int dim, int x, int y);
 void place_object_grid(int *x,int *y,int *w, int *h, int x_grid, int y_grid, 
 int w_grid, int h_grid, float grid_size_x, float grid_size_y);
 void place_object(int x,int y,float x_ratio, float y_ratio);
+void draw_multiline_text(int text_position,ALLEGRO_COLOR color,ALLEGRO_FONT *font, float x, float y, float line_height, const char *text);
+int read_input(float *x, float min, float max, int dim,char *text);
+int is_valid_number(char *str);
+void print_numbers(char *result, float *numbers, int n);
+
+int is_valid_number(char *str) {//check if string can be converted to float
+    char *endptr;
+    strtod(str, &endptr); // Use strtod to attempt to convert the string to a double
+    if (endptr == str || *endptr != '\0') return 0; // Check if conversion was successful and entire string was consumed
+    return 1;
+}
+
+void draw_multiline_text(int text_position,ALLEGRO_COLOR color,ALLEGRO_FONT *font, float x, float y, float line_height, const char *text) {
+    char line[1000];
+    for(int i=0,j=0;i<strlen(text);i++,j++){
+        //printf("%d -> %s\n",i,line);
+        if(text[i]=='\n'){
+            al_draw_text(font, color, x, y, text_position, line); // Draw the last line
+            line[0]='\0';
+            j=-1;
+            y+=line_height;
+        }
+        else{
+            line[j]=text[i];
+        }
+    }
+}
+
+int read_input(float *x, float min, float max, int dim,char *text){
+    int count=0;
+    char text_copy[1000];
+    strcpy(text_copy,text);
+    text_copy[0]=' ';//i remove the arrow character from the input string
+    text_copy[1]=' ';
+    char *token = strtok(text_copy, " ");
+    while (token != NULL) {
+        printf("%s\n",token);
+        if (is_valid_number(token)) {
+            x[count] = atof(token); // Convert token to float and store it
+            if(x[count]<min || x[count]>max){
+                printf("Invalid input: %f is not in the range [%f, %f].\n", x[count], min, max);
+                return 0; // Exit if an invalid number is found
+            }
+            count++;
+        } else {
+            printf("Invalid input: %s is not a valid number.\n", token);
+            return 0; // Exit if an invalid number is found
+        }
+        token = strtok(NULL, " "); // Get next token
+    }
+    if (count != dim) {
+        printf("Invalid input: Expected %d numbers, but got %d.\n", dim, count);
+        return 0; // Exit if the number of inputs does not match the expected dimension
+    }
+    return 1;
+}
+
+void print_numbers(char *result, float *numbers, int n){
+    for (int i = 0; i < n; i++) {
+        char numStr[20]; // Temporary string for the current number
+        sprintf(numStr, "%.2f", numbers[i]); // Convert number to string
+        strcat(result, numStr); // Concatenate number string to result
+        if (i < n - 1) {
+            strcat(result, " "); // Add a space after the number, except for the last one
+        }
+    }
+}
 
 struct Box create_default_box() {
     struct Box newBox;
@@ -209,7 +276,7 @@ void menu_loop(){
                 al_draw_filled_rectangle(boxes[i].x1, boxes[i].y1, boxes[i].x2, boxes[i].y2, boxes[i].color);
                 float center_x=(boxes[i].x1+boxes[i].x2)/2;
                 float center_y=(boxes[i].y1+boxes[i].y2)/2;
-                al_draw_textf(font, al_map_rgb(255, 255, 255), center_x, center_y, 1, boxes[i].text);
+                al_draw_textf(font, al_map_rgb(255, 255, 255), center_x, center_y, 1,"%s", boxes[i].text);
             }
 
             al_flip_display();
@@ -582,6 +649,10 @@ void training_loop(){
     int submenu=0;//index to tell in which windows i need to go when menu is closed
     bool done=false;
     bool is_training=false;
+    bool is_typing=false;
+    char typed_text[1000]={"->"};
+    char text_to_show[1000];
+    int input_button=-1;
 
     //i define the buttons needed to select the network structure
     struct Box n_layers_button = create_default_box();
@@ -628,9 +699,10 @@ void training_loop(){
     "\n 2=Large network -> "};
     //These arrays enabels to deal with the logic of each button avoiding the need
     //to implement a different logic for each button
-    int n_layers=1;
     int n_inputs[13]={1,-1,1,1,2,1,1,1,1,1,1,1,1};//is the number of inputs expected for the prompt of each buttton
     //-1 means that the number of inputs depends on other variables (eg. neurons per layer depends on n_layers)
+    float min_input[13]={0  ,1    ,0,0.00001,1    ,0,0,0.00000001,0.0000001,0,1    ,1    ,0};
+    float max_input[13]={100,28*28,1,0.99999,60000,2,1,100000    ,100000   ,1,60000,10000,2};//i put the same max and min for n_train and n_val -> fix
     int layers[max_hidden_layers]={64};//stores the neurons per layer
     float parameters[12]={1,0,0.1,60000,10000,2,0,0.1,0.9,1,32,20};//stores the input gathered by the user
     //they are ordered sequentially: n_inputs[0] values for first input, n_inputs[1] values for second input, ...
@@ -652,7 +724,7 @@ void training_loop(){
     //if the input was numeric we print the number/s
     //if the input was a selection we print the corresponding string 
     //type output tells how many possible strings we should be able to display for each button
-    char output_text[13][1000]={"sigmoid","ReLu","SGD","SGD with momentum","Nesterov",
+    char output_text[13][100]={"sigmoid","ReLu","SGD","SGD with momentum","Nesterov",
     "Cross entropy","MSE","no","yes"}; //the strings that can be displayed. The logic of the ordering is
     //the same as for the parameters array
     int index_to_text[13];//give the index of the first possible string to display in the output text array
@@ -712,6 +784,7 @@ void training_loop(){
         input_fields[i].x2=x+w;
         input_fields[i].y1=y;
         input_fields[i].y2=y+h;
+        input_fields[i].text_color=al_map_rgb(0, 0, 0);
     }
 
     //i define the other buttons and display regions to be shown
@@ -770,7 +843,17 @@ void training_loop(){
         //printf("training boxes x1=%d,x2=%d,y1=%d,y2=%d\n",training_boxes[i].x1,training_boxes[i].x2,training_boxes[i].y1,training_boxes[i].y2);
     }
 
-    
+    //this defines the user interface that appears when i ask for input to the user
+    struct Box input_box = create_default_box();
+    input_box.color=al_map_rgb(255, 255, 255);
+    place_object_grid(&x,&y,&w,&h,1,1,8,8,1/10.0, 1/10.0);
+    input_box.x1=x;
+    input_box.x2=x+w;
+    input_box.y1=y;
+    input_box.y2=y+h;
+    input_box.text_color=al_map_rgb(0, 0, 0);
+    input_box.text_position=0;
+
     while(1){
         al_wait_for_event(queue, &event);
         switch(event.type)
@@ -780,36 +863,77 @@ void training_loop(){
                     submenu=-1;
                     done = true;
                 }
+                if(is_typing && key[ALLEGRO_KEY_ENTER]){
+                    //sleep(2);
+                    int reading_result=0;
+                    float x[10];
+                    if(n_inputs[input_button]!=-1){
+                        reading_result=read_input(x, min_input[input_button], max_input[input_button], 
+                        n_inputs[input_button] ,typed_text);
+                    }
+                    else{
+                        reading_result=read_input(x, min_input[input_button], max_input[input_button]
+                        ,parameters[0],typed_text);//se ho cliccato il bottone
+                        //per fissare i neuroni per layer mi aspetto n_layers=parameters[0] valori
+                    }
+                    //printf("%f %f %d %s\n",min_input[input_button], max_input[input_button],n_inputs[input_button],typed_text);
+                    if(reading_result==0){
+                        memset(typed_text, 0, sizeof(typed_text));
+                        typed_text[0]='-';
+                        typed_text[1]='>';
+                    }
+                    else{
+                        if (input_button==num_input_boxes-1) {
+                            int p;
+                            p=x[0];
+                            for (int i=0;i<num_input_boxes-1;i++){
+                                parameters[i]=default_configs[p][i];
+                            }
+                        }
+                        else{
+                            if(n_inputs[input_button]!=-1){
+                                for(int j=0;j<n_inputs[input_button];j++){
+                                    parameters[index_to_par[input_button]+j]=x[j];
+                                }
+                            }
+                            else{
+                                for(int j=0;j<parameters[0];j++){
+                                    layers[j]=x[j];
+                                }
+                            }
+                        }
+                        is_typing=false;
+                        memset(typed_text, 0, sizeof(typed_text));
+                        typed_text[0]='-';
+                        typed_text[1]='>';
+                        memset(text_to_show, 0, sizeof(text_to_show));
+                        //printf("typed text=%s\n",typed_text);
+                    }
+                    redraw=true;
+                    //printf("doneeeee\n");
+                }
                 for(int i = 0; i < ALLEGRO_KEY_MAX; i++)
                     key[i] &= KEY_SEEN;
                 //redraw = true;
                 break;
             case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
                 if(!is_training){
-                    for (int i=0;i<num_input_boxes-1;i++){
-                        if (is_point_inside_button(event.mouse.x, event.mouse.y, training_boxes[i])) {
-                            // Button was clicked, perform an action
-                            printf("%s",output_cmd[i]);
-                            if(n_inputs[i]!=-1){
-                                for(int j=0;j<n_inputs[i];j++){
-                                    fscanf(stdin,"%f",&parameters[index_to_par[i]+j]);
-                                }
-                            }
-                            else{
-                                for(int j=0;j<n_layers;j++){
-                                    fscanf(stdin,"%d",&layers[j]);
-                                }
-                            }
+                    for (int i=0;i<num_input_boxes;i++){
+                        if (is_point_inside_button(event.mouse.x, event.mouse.y, input_boxes[i])) {
+                            is_typing=true;
+                            strcpy(text_to_show,output_cmd[i]);
                             redraw = true;
+                            input_button=i;
                         }
                     }
-                    if (is_point_inside_button(event.mouse.x, event.mouse.y, training_boxes[num_input_boxes-1])) {
-                        int p;
-                        fscanf(stdin,"%f",&p);
-                        for (int i=0;i<num_input_boxes-1;i++){
-                            parameters[i]=default_configs[p][i];
-                        }
-                    }
+                    //i set the neural network structure
+                    //set at training start
+                    /*define_training_parameters((int)parameters[11],parameters[7], (int)parameters[6], (int)parameters[9], 
+                    0.001, (int)parameters[5], parameters[8]);
+                    //i fix the minimum error to 0.0001
+                    define_network_structure(layers, (int)parameters[0], (int)parameters[1], 0);//i fix initialization to gaussian
+                    set_number_of_inputs((int)parameters[3], (int)parameters[4]);
+                    set_train_val((int)parameters[10], parameters[2]);*/
                 }
                 break;
             case ALLEGRO_EVENT_KEY_DOWN:
@@ -818,7 +942,24 @@ void training_loop(){
             case ALLEGRO_EVENT_KEY_UP:
                 key[event.keyboard.keycode] &= KEY_RELEASED;
                 break;
-
+            case ALLEGRO_EVENT_KEY_CHAR:
+                if(is_typing){
+                    if (event.keyboard.unichar >= 32 && event.keyboard.unichar <= 126) {
+                        if (strlen(typed_text) < sizeof(typed_text) - 1) {
+                            int len = strlen(typed_text);
+                            typed_text[len] = (char)event.keyboard.unichar;
+                            typed_text[len + 1] = '\0';
+                            redraw = true;
+                        }
+                    } else if (event.keyboard.keycode == ALLEGRO_KEY_BACKSPACE) {
+                        int len = strlen(typed_text);
+                        if (len > 0) {
+                            typed_text[len - 1] = '\0';
+                            redraw = true;
+                        }
+                    }
+                }
+                break;
             case ALLEGRO_EVENT_DISPLAY_CLOSE:
                 done = true;
                 break;
@@ -829,16 +970,33 @@ void training_loop(){
 
         if(redraw && al_is_event_queue_empty(queue)){
             if(!is_training){
-                //i set the neural network structure
-                define_training_parameters((int)parameters[11],parameters[7], (int)parameters[6], (int)parameters[9], 
-                0.001, (int)parameters[5], parameters[8]);
-                //i fix the minimum error to 0.0001
-                define_network_structure(layers, (int)parameters[0], (int)parameters[1], 0);//i fix initialization to gaussian
-                set_number_of_inputs((int)parameters[3], (int)parameters[4]);
-                set_train_val((int)parameters[10], parameters[2]);
                 for (int i=0;i<num_input_fields;i++){
                     if(type_output[i]==0){
-                        sprintf(input_fields[i].text,"%f",parameters[index_to_par[i]]);
+                        if(n_inputs[i]==-1){
+                            char result_string[100];
+                            float float_layers[100];
+                            //printf("n_layers=%d\n",n_layers);
+                            for(int j=0;j<parameters[0];j++){
+                                //printf("%d ",layers[j]);
+                                float_layers[j]=(float)layers[j];
+                            }
+                            print_numbers(result_string, float_layers, parameters[0]);
+                            sprintf(input_fields[i].text,"%s",result_string);
+                            memset(result_string, 0, sizeof(result_string));
+                        }
+                        else{
+                            char result_string[100];
+                            float float_params[100];
+                            for(int j=0;j<n_inputs[i];j++){
+                                float_params[j]=parameters[index_to_par[i]+j];
+                                //printf("%f ",float_params[j]);
+                            }
+                            print_numbers(result_string, float_params, n_inputs[i]);
+                            //printf("%s\n",result_string);
+                            //printf("\n");
+                            sprintf(input_fields[i].text,"%s",result_string);
+                            memset(result_string, 0, sizeof(result_string));
+                        }
                     }
                     else{
                         sprintf(input_fields[i].text,"%s",output_text[index_to_text[i]+(int)parameters[index_to_par[i]]]);
@@ -868,6 +1026,15 @@ void training_loop(){
                 float center_x=(training_boxes[i].x1+training_boxes[i].x2)/2;
                 float center_y=(training_boxes[i].y1+training_boxes[i].y2)/2;
                 al_draw_textf(font, training_boxes[i].text_color, center_x, center_y, training_boxes[i].text_position, "%s" , training_boxes[i].text);
+            }
+            if(is_typing){
+                al_draw_filled_rectangle(input_box.x1, input_box.y1, input_box.x2, input_box.y2, input_box.color);
+                float center_x=(input_box.x1+input_box.x2)/2;
+                float center_y=(input_box.y1+input_box.y2)/2;
+                //printf("text to show=%s\n",text_to_show);
+                draw_multiline_text(input_box.text_position,input_box.text_color, font, input_box.x1+10 , input_box.y1,10, text_to_show);
+                //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
+                al_draw_textf(font, input_box.text_color, input_box.x1+10, input_box.y2-20, input_box.text_position, "%s" , typed_text);
             }
             al_flip_display();
 
