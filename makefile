@@ -1,13 +1,13 @@
 # Define the compiler and flags
 CC = gcc
 PKG_CONFIG = pkg-config
-PKG_FLAGS = allegro-5 allegro_font-5 allegro_primitives-5
+PKG_FLAGS = allegro-5 allegro_font-5 allegro_primitives-5 allegro_ttf-5
 CFLAGS = $(shell $(PKG_CONFIG) --cflags $(PKG_FLAGS))
 LIBS = $(shell $(PKG_CONFIG) --libs $(PKG_FLAGS)) -lm
 
 # Define the target executable and source file
-TARGET = test
-SRC = test.c
+TARGET = main
+SRC = main.c
 
 # Default rule to build the target
 all: $(TARGET)

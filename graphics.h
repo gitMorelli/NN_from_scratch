@@ -1,6 +1,7 @@
 #include <allegro5/allegro.h>
 #include <allegro5/allegro_primitives.h>
 #include <allegro5/allegro_font.h>
+#include <allegro5/allegro_ttf.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +26,7 @@ static ALLEGRO_TIMER* timer;
 static ALLEGRO_EVENT_QUEUE* queue;
 static ALLEGRO_DISPLAY* disp;
 static ALLEGRO_FONT* font;
+static ALLEGRO_FONT* font_roboto;
 static ALLEGRO_FONT* small_font;
 static bool done;
 static bool redraw;
@@ -83,6 +85,7 @@ void plot_metrics(struct Box results_region,Metrics resulting_metrics);
 int read_filename(char (*valid_names)[MAX_FILE_NAME_LENGTH], int dim,char *text);
 int read_filenames_from_directory(char (*filenames)[MAX_FILE_NAME_LENGTH]);
 void draw_matrix(int **drawing_matrix, int drawing_x,int drawing_y,int dim);
+void show_typing_interface(struct Box input_box, char *text_to_show, char *typed_text);
 
 int read_filenames_from_directory(char (*filenames)[MAX_FILE_NAME_LENGTH]) {
     char *directoryPath;
@@ -160,7 +163,7 @@ int read_input(float *x, float min, float max, int dim,char *text){
     text_copy[1]=' ';
     char *token = strtok(text_copy, " ");
     while (token != NULL) {
-        printf("%s\n",token);
+        //printf("%s\n",token);
         if (is_valid_number(token)) {
             x[count] = atof(token); // Convert token to float and store it
             if(x[count]<min || x[count]>max){
@@ -255,7 +258,12 @@ void generic_initialization()
     font = al_create_builtin_font();
     must_init(font, "font");
 
+    al_init_ttf_addon();
+    al_init_font_addon();
 
+    // Load a TTF font with a specific size
+    font_roboto = al_load_ttf_font("fonts/roboto-font/RobotoRegular-3m4L.ttf", 36, 0); // Example size 36
+    must_init(font_roboto, "font");
 
     must_init(al_init_primitives_addon(), "primitives");
 
@@ -526,7 +534,7 @@ void interactive_loop(){
                     float result_input[1];
                     read_input(result_input, 0, n_files, 1,typed_text);
                     int i_file=(int)result_input[0];
-                    set_folder_name(".");
+                    //set_folder_name(".");
                     //printf("%d\n",i_file);
                     printf("Loading model %s\n",valid_names[i_file]);
                     sprintf(boxes[2].text,"%s",valid_names[i_file]);//boxes[3] is the result box
@@ -629,7 +637,7 @@ void interactive_loop(){
             if (inference){
                 //printf("here 0\n");
                 int guess=process_drawing_region(dim_drawing, drawing_matrix);
-                printf("guess=%d\n",guess);
+                //printf("guess=%d\n",guess);
                 inference=false;
                 sprintf(boxes[3].text,"RESULT: %d",guess);
             }
@@ -645,13 +653,7 @@ void interactive_loop(){
             }
             draw_matrix(drawing_matrix,drawing_area.x1,drawing_area.y1,dim_drawing);
             if(is_typing){
-                al_draw_filled_rectangle(input_box.x1, input_box.y1, input_box.x2, input_box.y2, input_box.color);
-                float center_x=(input_box.x1+input_box.x2)/2;
-                float center_y=(input_box.y1+input_box.y2)/2;
-                //printf("text to show=%s\n",text_to_show);
-                draw_multiline_text(input_box.text_position,input_box.text_color, font, input_box.x1+10 , input_box.y1,10, text_to_show);
-                //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
-                al_draw_textf(font, input_box.text_color, input_box.x1+10, input_box.y2-20, input_box.text_position, "%s" , typed_text);
+                show_typing_interface(input_box,text_to_show,typed_text);
             }
             al_flip_display();
 
@@ -679,7 +681,7 @@ void testing_mode_initialization(){
 
 void testing_loop(){
     testing_mode_initialization();
-    set_folder_name("input_folder");
+    //set_folder_name("input_folder");
     set_number_of_inputs(60000, 10000);
     load_test_set();
 
@@ -795,7 +797,7 @@ void testing_loop(){
                     float result_input[1];
                     read_input(result_input, 0, n_files, 1,typed_text);
                     int i_file=(int)result_input[0];
-                    set_folder_name(".");
+                    //set_folder_name(".");
                     //printf("%d\n",i_file);
                     printf("Loading model %s\n",valid_names[i_file]);
                     sprintf(boxes[3].text,"%s",valid_names[i_file]);//boxes[3] is the result box
@@ -878,7 +880,7 @@ void testing_loop(){
                 //printf("here 0\n");
                 forward_propagation(testing_images[index]);
                 int guess=get_best_class(outputs[number_of_layers-1]);
-                printf("guess=%d\n",guess);
+                //printf("guess=%d\n",guess);
                 inference=false;
                 sprintf(boxes[5].text,"RESULT: %d",guess);
             }
@@ -894,13 +896,7 @@ void testing_loop(){
             //extract one image at random and put as bitmap in the drawing region
             plot_metrics(test_results_area,resulting_metrics);
             if(is_typing){
-                al_draw_filled_rectangle(input_box.x1, input_box.y1, input_box.x2, input_box.y2, input_box.color);
-                float center_x=(input_box.x1+input_box.x2)/2;
-                float center_y=(input_box.y1+input_box.y2)/2;
-                //printf("text to show=%s\n",text_to_show);
-                draw_multiline_text(input_box.text_position,input_box.text_color, font, input_box.x1+10 , input_box.y1,10, text_to_show);
-                //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
-                al_draw_textf(font, input_box.text_color, input_box.x1+10, input_box.y2-20, input_box.text_position, "%s" , typed_text);
+                show_typing_interface(input_box,text_to_show,typed_text);
             }
             al_flip_display();
 
@@ -947,7 +943,7 @@ void training_loop(){
     bool done=false;
     bool is_training=false;
     bool is_typing=false;
-    bool has_saved=false;
+    bool is_saveing=false;
     bool has_trained=0;
     char typed_text[1000]={"->"};
     char text_to_show[1000];
@@ -957,6 +953,8 @@ void training_loop(){
     float epochs[1000];
     int n_epochs=0;
     Metrics resulting_metrics;
+    char result_string[100];
+    memset(result_string, 0, sizeof(result_string));
 
     //i define the buttons needed to select the network structure
     struct Box n_layers_button = create_default_box();
@@ -986,7 +984,7 @@ void training_loop(){
     //When a button is pressed the cmd shows a prompt to insert the corresponding value
     //this stores the prompt
     char output_cmd[13][1000]={"Insert the number of layers\n",
-    "Insert the number of neurons per layer using the format n1 n2 n3 .. nk for k layers\n",
+    "Insert the number of neurons per layer\n using the format n1 n2 n3 .. nk for k layers\n",
     "Insert the activation function\n 0=sigmoid\n 1=ReLu\n",
     "Determine the fraction of the training set to use for validation\n",
     "Determine the number of training (max 60000) and test examples (max 10000). Write: n_train n_test\n",
@@ -998,9 +996,9 @@ void training_loop(){
     "Insert the batch size\n",
     "Insert the number of training epochs\n",
     "You can choose some predefined configurations\n" 
-    "0=Default -> 1 layer, 64 neurons, sigmoid, 0.1 validation, 60000 training, 10000 test, Nesterov, log-likelihood, lr 0.1, p 0.9, shuffle, 32 batch, 20 epochs\n"
-    "\n 1=Small network -> "
-    "\n 2=Large network -> "};
+    "0) Default -> 1 layer, 64 neurons, sigmoid, 0.1 validation, 60000 training,\n10000 test, Nesterov, log-likelihood, lr 0.1, p 0.9, shuffle, 32 batch, 20 epochs\n"
+    "\n1) Small network -> "
+    "\n2)Large network -> \n"};
     //These arrays enabels to deal with the logic of each button avoiding the need
     //to implement a different logic for each button
     int n_inputs[13]={1,-1,1,1,2,1,1,1,1,1,1,1,1};//is the number of inputs expected for the prompt of each buttton
@@ -1046,9 +1044,9 @@ void training_loop(){
 
     //i define some default configurations that can be selected with the template reset button
     float default_configs[3][12] = {
-        {1,0,0.1,100,10,2,0,0.1,0.5,1,32,20},
+        {1,0,0.1,60000,10000,2,0,0.1,0.9,1,32,20},
         {2,0,0.1,60000,10000,2,0,0.1,0.9,1,32,20},
-        {1,0,0.1,60000,10000,2,0,0.1,0.9,1,32,20}
+        {1,1,0.1,60000,10000,2,0,0.1,0.9,1,32,20}//with relu
     };
     int default_n_layers[3][max_hidden_layers]=
     {
@@ -1066,11 +1064,11 @@ void training_loop(){
             input_boxes[i].color=al_map_rgb(0, 255, 0);
         }
         int x=0,y=0,w,h;
-        place_object_grid(&x,&y,&w,&h,1,2*i+1,1,1,1/10.0, 1/(float)(num_input_boxes*2+1));
+        place_object_grid(&x,&y,&w,&h,1,2*i+1,4,1,1/20.0, 1/(float)(num_input_boxes*2+1));
         //printf("x=%d,y=%d,w=%d,h=%d\n",x,y,w,h);
         input_boxes[i].x1=x;
         if(i==num_input_boxes-1){
-            input_boxes[i].x2=x+w*3;
+            input_boxes[i].x2=x+w*2;
         }
         else{
             input_boxes[i].x2=x+w;
@@ -1083,7 +1081,7 @@ void training_loop(){
         input_fields[i]=create_default_box();
         input_fields[i].color=al_map_rgb(255, 255, 255);
         int x=0,y=0,w,h;
-        place_object_grid(&x,&y,&w,&h,3,2*i+1,1,1,1/10.0, 1/(float)(num_input_boxes*2+1));
+        place_object_grid(&x,&y,&w,&h,5,2*i+1,4,1,1/20.0, 1/(float)(num_input_boxes*2+1));
         input_fields[i].x1=x;
         input_fields[i].x2=x+w;
         input_fields[i].y1=y;
@@ -1169,7 +1167,7 @@ void training_loop(){
                 }
                 if(is_typing && key[ALLEGRO_KEY_ENTER]){
                     //sleep(2);
-                    if(!has_saved){
+                    if(!is_saveing){
                         int reading_result=0;
                         float x[10];
                         if(n_inputs[input_button]!=-1){
@@ -1216,18 +1214,18 @@ void training_loop(){
                         }
                     }
                     else{
-                        char result_string[100];
                         for(int j=2;j<strlen(typed_text);j++){
                             result_string[j-2]=typed_text[j];
                         }
-                        set_folder_name(".");
+                        //set_folder_name(".");
                         save_NN(result_string);
-                        has_saved=false;
+                        is_saveing=false;
                         is_typing=false;
                         memset(typed_text, 0, sizeof(typed_text));
                         typed_text[0]='-';
                         typed_text[1]='>';
                         memset(text_to_show, 0, sizeof(text_to_show));
+                        memset(result_string, 0, sizeof(result_string));
                     }
                     redraw=true;
                     //printf("doneeeee\n");
@@ -1240,7 +1238,7 @@ void training_loop(){
                 if(!is_training){
                     if (is_point_inside_button(event.mouse.x, event.mouse.y, save_button)) {
                         is_typing=true;
-                        has_saved=true;
+                        is_saveing=true;
                         strcpy(text_to_show,"Insert the name of the file \n to save the neural network");
                         redraw = true;
                     }
@@ -1258,7 +1256,7 @@ void training_loop(){
                         redraw = true;
                         //i set the neural network structure
                         //set at training start
-                        set_folder_name("input_folder");
+                        //set_folder_name("input_folder");
                         set_number_of_inputs((int)parameters[3], (int)parameters[4]);
                         load_training_set();
                         define_training_parameters((int)parameters[11],parameters[7], (int)parameters[6], (int)parameters[9], 
@@ -1328,7 +1326,6 @@ void training_loop(){
                 for (int i=0;i<num_input_fields;i++){
                     if(type_output[i]==0){
                         if(n_inputs[i]==-1){
-                            char result_string[100];
                             float float_layers[100];
                             //printf("n_layers=%d\n",n_layers);
                             for(int j=0;j<parameters[0];j++){
@@ -1340,7 +1337,6 @@ void training_loop(){
                             memset(result_string, 0, sizeof(result_string));
                         }
                         else{
-                            char result_string[100];
                             float float_params[100];
                             for(int j=0;j<n_inputs[i];j++){
                                 float_params[j]=parameters[index_to_par[i]+j];
@@ -1390,13 +1386,7 @@ void training_loop(){
                 plot_metrics(results_region,resulting_metrics);
             }
             if(is_typing){
-                al_draw_filled_rectangle(input_box.x1, input_box.y1, input_box.x2, input_box.y2, input_box.color);
-                float center_x=(input_box.x1+input_box.x2)/2;
-                float center_y=(input_box.y1+input_box.y2)/2;
-                //printf("text to show=%s\n",text_to_show);
-                draw_multiline_text(input_box.text_position,input_box.text_color, font, input_box.x1+10 , input_box.y1,10, text_to_show);
-                //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
-                al_draw_textf(font, input_box.text_color, input_box.x1+10, input_box.y2-20, input_box.text_position, "%s" , typed_text);
+                show_typing_interface(input_box,text_to_show,typed_text);
             }
             /*float test_input[100]={2.3,2.3,2.3,2.3};
             float eee[100]={0,1,2,3,4};
@@ -1682,3 +1672,14 @@ void plot_metrics(struct Box results_region,Metrics resulting_metrics){
     }
 }
 
+void show_typing_interface(struct Box input_box, char *text_to_show, char *typed_text){
+    al_draw_filled_rectangle(input_box.x1, input_box.y1, input_box.x2, input_box.y2, input_box.color);
+    float center_x=(input_box.x1+input_box.x2)/2;
+    float center_y=(input_box.y1+input_box.y2)/2;
+    float height_box=input_box.y2-input_box.y1;
+    float spacing=height_box/10.0;
+    //printf("text to show=%s\n",text_to_show);
+    draw_multiline_text(input_box.text_position,input_box.text_color, font_roboto, input_box.x1+spacing , input_box.y1+spacing,height_box/10.0, text_to_show);
+    //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
+    al_draw_textf(font_roboto, input_box.text_color, input_box.x1+spacing, input_box.y2-height_box/10.0, input_box.text_position, "%s" , typed_text);
+}

@@ -270,9 +270,10 @@ void load_training_set()
     //load the data i use for training and validation
     //load the data i use for testing
     FILE *fptr;
-    char temporary[100];
+    /*char temporary[100];
     strcpy(temporary,main_folder_name);
-    fptr = fopen(strcat(temporary,"/train-labels-idx1-ubyte"),"rb");
+    fptr = fopen(strcat(temporary,"/train-labels-idx1-ubyte"),"rb");*/
+    fptr = fopen("input_folder/train-labels-idx1-ubyte","rb");
     if(fptr == NULL)
     {
         printf("Error opening file train labels!");   
@@ -293,9 +294,10 @@ void load_training_set()
         }
     }
     FILE *fptr2;
-    char temporary_2[100];
+    /*char temporary_2[100];
     strcpy(temporary_2,main_folder_name);
-    fptr2 = fopen(strcat(temporary_2,"/train-images-idx3-ubyte"),"rb");
+    fptr2 = fopen(strcat(temporary_2,"/train-images-idx3-ubyte"),"rb");*/
+    fptr2 = fopen("input_folder/train-images-idx3-ubyte","rb");
     if(fptr2 == NULL)
     {
         printf("Error!");   
@@ -309,9 +311,10 @@ void load_test_set()
 {
     //load the data i use for testing
     FILE *fptr;
-    char temporary[100];
+    /*char temporary[100];
     strcpy(temporary,main_folder_name);
-    fptr = fopen(strcat(temporary,"/t10k-labels-idx1-ubyte"),"rb");
+    fptr = fopen(strcat(temporary,"/t10k-labels-idx1-ubyte"),"rb");*/
+    fptr = fopen("input_folder/t10k-labels-idx1-ubyte","rb");
     if(fptr == NULL)
     {
         printf("Error opening file!");   
@@ -332,9 +335,10 @@ void load_test_set()
         }
     }
     FILE *fptr2;
-    char temporary_2[100];
+    /*char temporary_2[100];
     strcpy(temporary_2,main_folder_name);
-    fptr2 = fopen(strcat(temporary_2,"/t10k-images-idx3-ubyte"),"rb");
+    fptr2 = fopen(strcat(temporary_2,"/t10k-images-idx3-ubyte"),"rb");*/
+    fptr2 = fopen("input_folder/t10k-images-idx3-ubyte","rb");
     if(fptr2 == NULL)
     {
         printf("Error!");   
@@ -663,6 +667,14 @@ void learn_example(int index_of_example)
                 case 0: //log likelihood
                     deltas[l][i] = training_labels[index_of_example][i]-outputs[l][i];
                     break;
+                case 1: //mean squared error
+                    float sum_k=0;
+                    for (int k=0; k<neurons_output_layer; k++)
+                    {
+                        sum_k += (training_labels[index_of_example][k]-outputs[l][k]);
+                    }
+                    deltas[l][i] =-outputs[l][i] * (sum_k+ (training_labels[index_of_example][i]-outputs[l][i]));
+                    break;
                 default: // log likelihood
                     deltas[l][i] = training_labels[index_of_example][i]-outputs[l][i];
                     break;
@@ -683,8 +695,11 @@ void learn_example(int index_of_example)
                 float activ_derivative;
                 switch (type_of_loss)
                 {
-                case 0: //log likelihood
+                case 0: //sigmoid
                     activ_derivative = sigmoid_derivative(activations[l][i]);
+                    break;
+                case 1: //Relu
+                    activ_derivative = ReLU_derivative(activations[l][i]);
                     break;
                 default: // log likelihood
                     activ_derivative = sigmoid_derivative(activations[l][i]);
@@ -713,6 +728,10 @@ void learn_example(int index_of_example)
             //for the first layer the outputs are the linearized inputs
         }
     }
+    /*for(int i=0;i<neurons_output_layer;i++){
+        printf("%.3f ",outputs[number_of_layers-1][i]);
+    }
+    printf("\n");*/
 }
 
 float optimizer_w(float delta, float input, float dw_prev){
@@ -852,8 +871,9 @@ void train_network()
 float log_likelihood(int *t, float *y, int dim)
 {
     float C=0;
+    float epsilon=1e-30;
     for (int i=0;i<dim;i++){
-        C -= t[i]*log(y[i]); 
+        C -= t[i]*log(y[i]+epsilon); 
     }
     return C;
 }
@@ -1000,10 +1020,12 @@ float *get_probabilities(int input[input_size][input_size])
 
 //----------------------------
 void save_NN(char *filename) {
-    char temporary[100];
+    /*char temporary[100];
     strcpy(temporary,main_folder_name);
     strcat(temporary,"/models/");
     //printf("%s\n",strcat(temporary,filename)); //input_folder/models/first_working_model
+    FILE *file = fopen(strcat(temporary,filename), "w");*/
+    char temporary[100]="models/";
     FILE *file = fopen(strcat(temporary,filename), "w");
     if (file == NULL) {
         printf("Error opening file!\n");
@@ -1040,9 +1062,10 @@ void save_NN(char *filename) {
 
 void load_model(char *filename)
 {
-    char temporary[100];
+    /*char temporary[100];
     strcpy(temporary,main_folder_name);
-    strcat(temporary,"/models/");
+    strcat(temporary,"/models/");*/
+    char temporary[100]="models/";
     FILE *file = fopen(strcat(temporary,filename), "r");
     if (file == NULL) {
         printf("Error opening file!\n");
