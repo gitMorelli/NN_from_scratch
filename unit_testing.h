@@ -346,7 +346,7 @@ void test_loss_on_example(){
         outputs[3][i] = 0.1;
     }
     outputs[3][9] = 0.9;
-    float loss=loss_on_example(x,0);
+    float loss=loss_on_example(x,outputs[3],0);
     assert(fabs(loss - 0.10536)<=0.01);
 }
 
@@ -389,7 +389,7 @@ void test_learn_example(){
         reset_dw_db();
         learn_example(0);
         update_w_b();
-        float loss=loss_on_example(training_labels[0],type_of_loss);
+        float loss=loss_on_example(training_labels[0],outputs[3],type_of_loss);
         //printf("LOSS at %d: %f\n",i,loss);
         /*for (int j=0;j<10;j++){
             printf("%f ",outputs[3][j]);
@@ -615,13 +615,50 @@ void test_compute_metrics(){
     }
 }
 
-void test_testing_loop(){
-    set_folder_name("input_folder");
-    set_number_of_inputs(60000, 10000);
-    load_test_set();
-    testing_loop();
-}
-
 void test_training_graphics(){
     training_loop();
+}
+
+void test_save_model(){
+    test_training_loop();
+    set_folder_name(".");
+    save_NN("first_working_model");
+}
+
+void test_load_model(){
+    set_folder_name(".");
+    load_model("first_working_model");
+    printf("number of layers: %d\n",number_of_layers);
+    for (int i=0;i<number_of_layers;i++){
+        printf("neurons in layer %d: %d\n",i,neurons_per_layer[i]);
+    }
+    printf("type of activation function: %d\n",type_of_activation);
+    for (int i=0;i<number_of_layers;i++){
+        printf("weights dimension in layer %d: %d %d\n",i,weights_dim[i][0],weights_dim[i][1]);
+    }
+    set_folder_name("input_folder");
+    set_number_of_inputs(1000, 10);
+    load_training_set();
+    define_training_parameters(1,0.1, 0, 1, 0.00001,2,0.9);
+    set_train_val(10, 0.1);
+    split_data();
+    int batch_index=5;
+    int start = batch_index*minibatch_size;
+    int end = (batch_index+1)*minibatch_size;
+    float label[n_classes];
+    printf("Results on ten random images\n");
+    for (int i=0;i<20;i++){
+        forward_propagation(training_images[map_training_images[i]]);
+        for (int j=0;j<10;j++){
+            printf("%f ",outputs[number_of_layers-1][j]);
+        }
+        printf("%d ",get_best_class(outputs[number_of_layers-1]));
+        printf(" | %d ",get_best_class(int_to_float(label,training_labels[map_training_images[i]],n_classes)));
+        printf("\n");
+    }
+    printf("Testing inference on validation set\n");
+    float probabilities[number_of_val_images][10];
+    inference_on_set(validation_images, probabilities, number_of_val_images);
+    Metrics M=compute_metrics(probabilities,validation_labels, number_of_val_images);
+    printf("Accuracy=%f",M.overall_accuracy);
 }

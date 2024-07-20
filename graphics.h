@@ -5,15 +5,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define FPS 60
 #define FRAME_TAU 60
 #define NUM_VERTICES 4096
 #define KEY_SEEN     1
 #define KEY_RELEASED 2
-#define WIDTH 640
-#define HEIGHT 480
+#define WIDTH 1400
+#define HEIGHT 800
 #define MAX_BUTTONS 20
+#define MAX_FILE_NAME_LENGTH 1000
 
 static int INPUT; //stores the input of the user (which come from the mouse interaction with some buttons)
 // quit=0, menu=1, train=2, test=3, interactive=4
@@ -21,6 +25,7 @@ static ALLEGRO_TIMER* timer;
 static ALLEGRO_EVENT_QUEUE* queue;
 static ALLEGRO_DISPLAY* disp;
 static ALLEGRO_FONT* font;
+static ALLEGRO_FONT* small_font;
 static bool done;
 static bool redraw;
 static ALLEGRO_EVENT event;
@@ -28,16 +33,24 @@ static float x_graphics, y_graphics;
 static unsigned char key[ALLEGRO_KEY_MAX];
 static int width=WIDTH;
 static int height=HEIGHT;
-static struct Box{
+static float x_lim_sup=10;
+static float y_lim_sup=-1;
+static float x_lim_inf=0;
+static float y_lim_inf=0;
+static float x_pos_sup=-1;
+static float y_pos_sup=-1;
+static float x_pos_inf=-1;
+static float y_pos_inf=-1;
+struct Box{
     int x1;
     int y1;
     int x2;
     int y2;
     ALLEGRO_COLOR color;
-    char text[100];
+    char text[1000];
     int text_position;
     ALLEGRO_COLOR text_color;
-} ;
+};
 
 void display_training_interface();
 void display_testing_interface();
@@ -51,13 +64,13 @@ void interactive_mode_initialization();
 struct Box create_default_box();
 void interactive_loop();
 int read_pixel_from_display(ALLEGRO_BITMAP *backbuffer,int x, int y);
-void process_drawing_region(int dim, int **drawing_matrix);
+int process_drawing_region(int dim, int **drawing_matrix);
 void training_loop();
 void testing_loop();
 void drawing_function(int x, int y, int drawing_x,int drawing_y, int r,int dim,int **drawing_matrix);
 void upsample_image(int image[28][28], int dim, int upsampled_image[dim][dim]);
 ALLEGRO_BITMAP *create_bitmap_from_image(int dim,int image[dim][dim]);
-void display_next_image(int dim, int x, int y);
+void display_next_image(int dim, int x, int y,int index);
 void place_object_grid(int *x,int *y,int *w, int *h, int x_grid, int y_grid, 
 int w_grid, int h_grid, float grid_size_x, float grid_size_y);
 void place_object(int x,int y,float x_ratio, float y_ratio);
@@ -65,6 +78,56 @@ void draw_multiline_text(int text_position,ALLEGRO_COLOR color,ALLEGRO_FONT *fon
 int read_input(float *x, float min, float max, int dim,char *text);
 int is_valid_number(char *str);
 void print_numbers(char *result, float *numbers, int n);
+void draw_plot(struct Box container , float *y, float *x, int dim, ALLEGRO_COLOR color);
+void plot_metrics(struct Box results_region,Metrics resulting_metrics);
+int read_filename(char (*valid_names)[MAX_FILE_NAME_LENGTH], int dim,char *text);
+int read_filenames_from_directory(char (*filenames)[MAX_FILE_NAME_LENGTH]);
+void draw_matrix(int **drawing_matrix, int drawing_x,int drawing_y,int dim);
+
+int read_filenames_from_directory(char (*filenames)[MAX_FILE_NAME_LENGTH]) {
+    char *directoryPath;
+    char buffer[1024]; // Adjust the size as necessary
+    // Attempt to get the current working directory
+    directoryPath = getcwd(buffer, sizeof(buffer));
+    if (directoryPath == NULL) {
+        perror("getcwd");
+        return -1;
+    }
+    strcat(directoryPath,"/models");
+    DIR *dir = opendir(directoryPath);
+    if (dir == NULL) {
+        perror("opendir");
+        return -1;
+    }
+    struct dirent *ent;
+    int count=0;
+    while ((ent = readdir(dir)) != NULL) {
+        // Skip "." and ".." entries
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
+            continue;
+        }
+
+        // Construct the full path of the file
+        char fullPath[1024];
+        snprintf(fullPath, sizeof(fullPath), "%s/%s", directoryPath, ent->d_name);
+
+        // Use stat() to get file status
+        struct stat fileInfo;
+        if (stat(fullPath, &fileInfo) == 0) {
+            // Check if it's a regular file
+            if (S_ISREG(fileInfo.st_mode)) {
+                //printf("Regular file: %s\n", fullPath);
+                strcpy(filenames[count],ent->d_name);
+                count++;
+            }
+        } else {
+            perror("stat");
+        }
+    }
+
+    closedir(dir);
+    return count;
+}
 
 int is_valid_number(char *str) {//check if string can be converted to float
     char *endptr;
@@ -77,9 +140,9 @@ void draw_multiline_text(int text_position,ALLEGRO_COLOR color,ALLEGRO_FONT *fon
     char line[1000];
     for(int i=0,j=0;i<strlen(text);i++,j++){
         //printf("%d -> %s\n",i,line);
-        if(text[i]=='\n'){
+        if(text[i]=='\n' || text[i]=='\0'){
             al_draw_text(font, color, x, y, text_position, line); // Draw the last line
-            line[0]='\0';
+            memset(line, 0, sizeof(line)); // Clear the line buffer
             j=-1;
             y+=line_height;
         }
@@ -116,6 +179,22 @@ int read_input(float *x, float min, float max, int dim,char *text){
         return 0; // Exit if the number of inputs does not match the expected dimension
     }
     return 1;
+}
+
+int read_filename(char (*valid_names)[MAX_FILE_NAME_LENGTH], int dim,char *text){
+    //return the index of the valid filename
+    char text_copy[1000];
+    for(int i=2;i<strlen(text);i++){
+        text_copy[i-2]=text[i];
+    }
+    text_copy[strlen(text)-2]='\0';
+    for(int i=0;i<dim;i++){
+        //printf("%s %s %s\n",text, text_copy, valid_names[i]);
+        if(strcmp(text_copy,valid_names[i])==0){
+            return i;
+        }
+    }
+    return -1;
 }
 
 void print_numbers(char *result, float *numbers, int n){
@@ -175,6 +254,8 @@ void generic_initialization()
 
     font = al_create_builtin_font();
     must_init(font, "font");
+
+
 
     must_init(al_init_primitives_addon(), "primitives");
 
@@ -319,13 +400,36 @@ void drawing_function(int x, int y, int drawing_x,int drawing_y, int r,int dim,i
         }
     }
 }
+
+void draw_matrix(int **drawing_matrix, int drawing_x,int drawing_y,int dim){
+    for(int i=0;i<dim;i++){
+        for(int j=0;j<dim;j++){
+            if(drawing_matrix[i][j]==255){
+                int x_new=i+drawing_y;
+                int y_new=j+drawing_x;//x and y in the reference frame of the drawing area
+                al_draw_filled_rectangle(y_new, x_new, y_new+1, x_new+1, al_map_rgb(0, 0, 0));
+            }
+        }
+    }
+
+}
 //which elements i want in the window? A window where i can draw numbers with the mouse
 //a window where i can select the network to use
 void interactive_loop(){
     interactive_mode_initialization();
     bool drawing = false; // Flag to track whether we are currently drawing
     bool inference = false;
+    bool is_typing=false;
+    char typed_text[1000]={"->"};
+    char text_to_show[1000];
     float last_x = 0, last_y = 0; // Keep track of the last position
+
+    char valid_names[100][MAX_FILE_NAME_LENGTH];
+    int n_files=read_filenames_from_directory(valid_names);
+    /*for(int i=0;i<n_files;i++){
+        printf("%s\n",valid_names[i]);
+    }*/
+
     int x_blocks=width/6; //i divide in fifths and the buttons take the central fifth
     int y_blocks=height/6; //the three boxes will go in 
     int x_blocks_fine=width/12; //i divide in fifths and the buttons take the central fifth
@@ -333,6 +437,7 @@ void interactive_loop(){
     int submenu=2;//index to tell in which windows i need to go when menu is closed
     struct Box clear_button = create_default_box();
     struct Box NN_selection = create_default_box();
+    struct Box NN_selection_result = create_default_box();
     struct Box result_box = create_default_box();
     struct Box drawing_area = create_default_box();
     struct Box submit_button = create_default_box();
@@ -361,18 +466,27 @@ void interactive_loop(){
     clear_button.y2=y_blocks_fine*5;
     strcpy(clear_button.text,"CLEAR");
     //i define the selection button
-    NN_selection.color=al_map_rgba(255, 255, 120,0.6);
+    NN_selection.color=al_map_rgba(255, 255, 0,1);
     NN_selection.x1=x_blocks_fine*9;
-    NN_selection.x2=x_blocks_fine*11;
+    NN_selection.x2=x_blocks_fine*10;
     NN_selection.y1=y_blocks_fine*6;
     NN_selection.y2=y_blocks_fine*7;
+    NN_selection.text_color=al_map_rgb(0, 0, 0);
     strcpy(NN_selection.text,"SELECT NN");
+    //i define the selection button
+    NN_selection_result.color=al_map_rgb(255, 255, 255);
+    NN_selection_result.x1=x_blocks_fine*10;
+    NN_selection_result.x2=x_blocks_fine*11;
+    NN_selection_result.y1=y_blocks_fine*6;
+    NN_selection_result.y2=y_blocks_fine*7;
+    NN_selection_result.text_color=al_map_rgb(0, 0, 0);
+    strcpy(NN_selection_result.text," ");
     //i define the result region
     result_box.color=al_map_rgb(255, 255, 255);
     result_box.x1=x_blocks_fine*5;
     result_box.x2=x_blocks_fine*7;
-    result_box.y1=y_blocks_fine*9;
-    result_box.y2=y_blocks_fine*10;
+    result_box.y1=drawing_area.y2+y_blocks_fine;
+    result_box.y2=result_box.y1+y_blocks_fine;
     result_box.text_position=2;//left aligned
     result_box.text_color=al_map_rgb(0, 0, 0);
     strcpy(result_box.text,"RESULT:");
@@ -383,8 +497,20 @@ void interactive_loop(){
     submit_button.y1=y_blocks_fine*4;
     submit_button.y2=y_blocks_fine*5;
     strcpy(submit_button.text,"SUBMIT");
-    const int num_boxes=5;
-    struct Box boxes[MAX_BUTTONS]={clear_button,NN_selection,result_box,drawing_area,submit_button};
+    const int num_boxes=6;
+    struct Box boxes[MAX_BUTTONS]={clear_button,NN_selection,NN_selection_result,result_box,drawing_area,submit_button};
+    
+    struct Box input_box = create_default_box();
+    input_box.color=al_map_rgb(255, 255, 255);
+    int x,y,w,h;
+    place_object_grid(&x,&y,&w,&h,1,1,8,8,1/10.0, 1/10.0);
+    input_box.x1=x;
+    input_box.x2=x+w;
+    input_box.y1=y;
+    input_box.y2=y+h;
+    input_box.text_color=al_map_rgb(0, 0, 0);
+    input_box.text_position=0;
+
     while(1){
         al_wait_for_event(queue, &event);
 
@@ -394,6 +520,24 @@ void interactive_loop(){
                 if(key[ALLEGRO_KEY_ESCAPE]){
                     submenu=-1;
                     done = true;
+                }
+                if(is_typing && key[ALLEGRO_KEY_ENTER]){
+                    //int i_file=read_filename(valid_names, n_files,typed_text);
+                    float result_input[1];
+                    read_input(result_input, 0, n_files, 1,typed_text);
+                    int i_file=(int)result_input[0];
+                    set_folder_name(".");
+                    //printf("%d\n",i_file);
+                    printf("Loading model %s\n",valid_names[i_file]);
+                    sprintf(boxes[2].text,"%s",valid_names[i_file]);//boxes[3] is the result box
+                    //for the NN selection
+                    load_model(valid_names[i_file]);
+                    is_typing=false;
+                    memset(typed_text, 0, sizeof(typed_text));
+                    typed_text[0]='-';
+                    typed_text[1]='>';
+                    memset(text_to_show, 0, sizeof(text_to_show));
+                    redraw=true;
                 }
                 for(int i = 0; i < ALLEGRO_KEY_MAX; i++)
                     key[i] &= KEY_SEEN;
@@ -415,10 +559,22 @@ void interactive_loop(){
                     drawing = true; // Start drawing
                     last_x = event.mouse.x; // Update last position
                     last_y = event.mouse.y;
+                    redraw=true;
                 }
                 if (is_point_inside_button(event.mouse.x, event.mouse.y, submit_button)) {
                     // Button was clicked, perform an action
                     inference = true;
+                    redraw=true;
+                }
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, NN_selection)) {
+                    is_typing=true;
+                    char temporary[10000]="Insert the number of the file in the list \n (first is 0) to load the neural network:\n";
+                    for(int i=0;i<n_files;i++){
+                        strcat(temporary,valid_names[i]);
+                        strcat(temporary,"\n");
+                    }
+                    strcpy(text_to_show,temporary);
+                    redraw = true;
                 }
                 break;
             case ALLEGRO_EVENT_MOUSE_BUTTON_UP:
@@ -427,10 +583,6 @@ void interactive_loop(){
             case ALLEGRO_EVENT_MOUSE_AXES:
                 if (drawing) {
                     //printf("still drawing\n");
-                    if (is_point_inside_button(event.mouse.x, event.mouse.y, drawing_area))
-                        drawing_function(event.mouse.x, event.mouse.y, drawing_area.x1,drawing_area.y1, 
-                        4, dim_drawing, drawing_matrix);
-                        al_flip_display();
                     last_x = event.mouse.x;
                     last_y = event.mouse.y;
                 }
@@ -441,7 +593,24 @@ void interactive_loop(){
             case ALLEGRO_EVENT_KEY_UP:
                 key[event.keyboard.keycode] &= KEY_RELEASED;
                 break;
-
+            case ALLEGRO_EVENT_KEY_CHAR:
+                if(is_typing){
+                    if (event.keyboard.unichar >= 32 && event.keyboard.unichar <= 126) {
+                        if (strlen(typed_text) < sizeof(typed_text) - 1) {
+                            int len = strlen(typed_text);
+                            typed_text[len] = (char)event.keyboard.unichar;
+                            typed_text[len + 1] = '\0';
+                            redraw = true;
+                        }
+                    } else if (event.keyboard.keycode == ALLEGRO_KEY_BACKSPACE) {
+                        int len = strlen(typed_text);
+                        if (len > 0) {
+                            typed_text[len - 1] = '\0';
+                            redraw = true;
+                        }
+                    }
+                }
+                break;
             case ALLEGRO_EVENT_DISPLAY_CLOSE:
                 done = true;
                 break;
@@ -449,9 +618,21 @@ void interactive_loop(){
 
         if(done)
             break;
-
+        if(drawing && al_is_event_queue_empty(queue)){
+            //printf("drawing\n");
+            drawing_function(last_x,last_y, drawing_area.x1,drawing_area.y1, 
+            10, dim_drawing, drawing_matrix);//fill drawing matrix
+            al_flip_display();
+        }
         if(redraw && al_is_event_queue_empty(queue)){
             //printf("aaaaah\n");
+            if (inference){
+                //printf("here 0\n");
+                int guess=process_drawing_region(dim_drawing, drawing_matrix);
+                printf("guess=%d\n",guess);
+                inference=false;
+                sprintf(boxes[3].text,"RESULT: %d",guess);
+            }
             al_clear_to_color(al_map_rgb(0, 0, 0));
             al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "INTERACTIVE");
             for (int i=0;i<num_boxes;i++){
@@ -459,16 +640,22 @@ void interactive_loop(){
                 float center_x=(boxes[i].x1+boxes[i].x2)/2;
                 float center_y=(boxes[i].y1+boxes[i].y2)/2;
                 al_draw_textf(font, boxes[i].text_color, center_x, center_y, boxes[i].text_position, "%s" ,boxes[i].text);
+                /*printf("%s\n" ,boxes[i].text);
+                printf("%s\n" ,result_box.text);*/
             }
-
+            draw_matrix(drawing_matrix,drawing_area.x1,drawing_area.y1,dim_drawing);
+            if(is_typing){
+                al_draw_filled_rectangle(input_box.x1, input_box.y1, input_box.x2, input_box.y2, input_box.color);
+                float center_x=(input_box.x1+input_box.x2)/2;
+                float center_y=(input_box.y1+input_box.y2)/2;
+                //printf("text to show=%s\n",text_to_show);
+                draw_multiline_text(input_box.text_position,input_box.text_color, font, input_box.x1+10 , input_box.y1,10, text_to_show);
+                //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
+                al_draw_textf(font, input_box.text_color, input_box.x1+10, input_box.y2-20, input_box.text_position, "%s" , typed_text);
+            }
             al_flip_display();
 
             redraw = false;
-        }
-        if (inference){
-            //printf("here 0\n");
-            process_drawing_region(dim_drawing, drawing_matrix);
-            inference=false;
         }
     }
     destroy_graphics();
@@ -492,6 +679,19 @@ void testing_mode_initialization(){
 
 void testing_loop(){
     testing_mode_initialization();
+    set_folder_name("input_folder");
+    set_number_of_inputs(60000, 10000);
+    load_test_set();
+
+    bool inference = false;
+    bool is_typing=false;
+    char typed_text[1000]={"->"};
+    char text_to_show[1000];
+    char valid_names[100][MAX_FILE_NAME_LENGTH];
+    int n_files=read_filenames_from_directory(valid_names);
+    int index=rand()%number_of_test_images;
+    Metrics resulting_metrics;
+
     int x_blocks=width/6; //i divide in fifths and the buttons take the central fifth
     int y_blocks=height/6; //the three boxes will go in 
     int x_blocks_fine=width/12; //i divide in fifths and the buttons take the central fifth
@@ -500,64 +700,86 @@ void testing_loop(){
     struct Box next_button = create_default_box();
     struct Box submit_button = create_default_box();
     struct Box NN_selection = create_default_box();
+    struct Box NN_selection_result = create_default_box();
     struct Box start_test_box = create_default_box();
     struct Box result_box = create_default_box();
     struct Box showing_area = create_default_box();
     struct Box test_results_area = create_default_box();
     //i define the drawing region
     showing_area.color=al_map_rgb(255, 255, 255);
-    showing_area.x1=x_blocks*2;
-    showing_area.x2=x_blocks*4;
-    showing_area.y1=y_blocks;
+    showing_area.x1=x_blocks_fine*7;
+    showing_area.x2=x_blocks_fine*10;
+    showing_area.y1=y_blocks_fine;
     showing_area.y2=y_blocks+showing_area.x2-showing_area.x1;
     int drawing_dim=showing_area.x2-showing_area.x1;
     //I define the are where i will plot the results
     test_results_area.color=al_map_rgb(255, 255, 255);
     test_results_area.x1=x_blocks_fine*1;
-    test_results_area.x2=x_blocks_fine*3;
-    test_results_area.y1=y_blocks;
-    test_results_area.y2=showing_area.y2;
+    test_results_area.x2=x_blocks_fine*5;
+    test_results_area.y1=y_blocks_fine*3;
+    test_results_area.y2=y_blocks_fine*11;
     strcpy(test_results_area.text,"TEST RESULTS");
     //i define the next button
     next_button.color=al_map_rgba(0, 255, 0,0.6);
     next_button.x1=x_blocks_fine*9;
     next_button.x2=x_blocks_fine*10;
-    next_button.y1=y_blocks_fine*4;
-    next_button.y2=y_blocks_fine*5;
+    next_button.y1=showing_area.y2+y_blocks_fine;
+    next_button.y2=next_button.y1+y_blocks_fine;
     strcpy(next_button.text,"NEXT");
     //i define the submit button
     submit_button.color=al_map_rgba(255, 0, 0,0.6);
     submit_button.x1=x_blocks_fine*10;
     submit_button.x2=x_blocks_fine*11;
-    submit_button.y1=y_blocks_fine*4;
-    submit_button.y2=y_blocks_fine*5;
+    submit_button.y1=showing_area.y2+y_blocks_fine;
+    submit_button.y2=next_button.y1+y_blocks_fine;
     strcpy(submit_button.text,"SUBMIT");
     //i define the selection button
-    NN_selection.color=al_map_rgba(255, 255, 120,0.6);
-    NN_selection.x1=x_blocks_fine*9;
-    NN_selection.x2=x_blocks_fine*10;
-    NN_selection.y1=y_blocks_fine*6;
-    NN_selection.y2=y_blocks_fine*7;
+    NN_selection.color=al_map_rgba(0, 255, 0,1);
+    NN_selection.x1=test_results_area.x1;
+    NN_selection.x2=test_results_area.x1+2*x_blocks_fine;
+    NN_selection.y1=y_blocks_fine;
+    NN_selection.y2=y_blocks_fine*2;
+    NN_selection_result.text_color=al_map_rgb(0, 0, 0);
     strcpy(NN_selection.text,"SELECT NN");
+    //i define the selection button
+    NN_selection_result.color=al_map_rgb(255, 255, 255);
+    NN_selection_result.x1=NN_selection.x2;
+    NN_selection_result.x2=NN_selection_result.x1+2*x_blocks_fine;
+    NN_selection_result.y1=y_blocks_fine;
+    NN_selection_result.y2=y_blocks_fine*2;
+    NN_selection_result.text_color=al_map_rgb(0, 0, 0);
+    strcpy(NN_selection_result.text," ");
     //i define the button to start execution of test on test set
-    start_test_box.color=al_map_rgba(255, 255, 120,0.6);
-    start_test_box.x1=x_blocks_fine*10;
-    start_test_box.x2=x_blocks_fine*11;
-    start_test_box.y1=y_blocks_fine*6;
-    start_test_box.y2=y_blocks_fine*7;
+    start_test_box.color=al_map_rgba(0, 255, 0,1);
+    start_test_box.x1=x_blocks_fine*6;
+    start_test_box.x2=submit_button.x2;
+    start_test_box.y1=next_button.y2+y_blocks_fine;
+    start_test_box.y2=start_test_box.y1+y_blocks_fine;
     strcpy(start_test_box.text,"START TEST");
     //i define the result region
     result_box.color=al_map_rgb(255, 255, 255);
-    result_box.x1=x_blocks_fine*5;
-    result_box.x2=x_blocks_fine*7;
-    result_box.y1=y_blocks_fine*9;
-    result_box.y2=y_blocks_fine*10;
+    result_box.x1=x_blocks_fine*6;
+    result_box.x2=x_blocks_fine*8;
+    result_box.y1=showing_area.y2+y_blocks_fine;
+    result_box.y2=result_box.y1+y_blocks_fine;
     result_box.text_position=2;//left aligned
     result_box.text_color=al_map_rgb(0, 0, 0);
     strcpy(result_box.text,"RESULT:");
-    const int num_boxes=7;
-    struct Box boxes[MAX_BUTTONS]={next_button,submit_button,NN_selection,
+    const int num_boxes=8;
+    struct Box boxes[MAX_BUTTONS]={next_button,submit_button,NN_selection,NN_selection_result,
     start_test_box,result_box,showing_area,test_results_area};
+
+    struct Box input_box = create_default_box();
+    input_box.color=al_map_rgb(255, 255, 255);
+    int x,y,w,h;
+    place_object_grid(&x,&y,&w,&h,1,1,8,8,1/10.0, 1/10.0);
+    input_box.x1=x;
+    input_box.x2=x+w;
+    input_box.y1=y;
+    input_box.y2=y+h;
+    input_box.text_color=al_map_rgb(0, 0, 0);
+    input_box.text_position=0;
+
     while(1){
         al_wait_for_event(queue, &event);
 
@@ -568,13 +790,53 @@ void testing_loop(){
                     submenu=-1;
                     done = true;
                 }
+                if(is_typing && key[ALLEGRO_KEY_ENTER]){
+                    //int i_file=read_filename(valid_names, n_files,typed_text);
+                    float result_input[1];
+                    read_input(result_input, 0, n_files, 1,typed_text);
+                    int i_file=(int)result_input[0];
+                    set_folder_name(".");
+                    //printf("%d\n",i_file);
+                    printf("Loading model %s\n",valid_names[i_file]);
+                    sprintf(boxes[3].text,"%s",valid_names[i_file]);//boxes[3] is the result box
+                    //for the NN selection
+                    load_model(valid_names[i_file]);
+                    is_typing=false;
+                    memset(typed_text, 0, sizeof(typed_text));
+                    typed_text[0]='-';
+                    typed_text[1]='>';
+                    memset(text_to_show, 0, sizeof(text_to_show));
+                    redraw=true;
+                }
                 for(int i = 0; i < ALLEGRO_KEY_MAX; i++)
                     key[i] &= KEY_SEEN;
                 //redraw = true;
                 break;
             case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, start_test_box)) {
+                    redraw = true;
+                    float p_test[number_of_test_images][10];
+                    inference_on_set(testing_images,p_test, number_of_test_images);
+                    resulting_metrics=compute_metrics(p_test,testing_labels, number_of_test_images);
+                }
                 if (is_point_inside_button(event.mouse.x, event.mouse.y, next_button)) {
                     // Button was clicked, perform an action
+                    index=rand()%number_of_test_images;
+                    redraw = true;
+                }
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, submit_button)) {
+                    // Button was clicked, perform an action
+                    inference = true;
+                    redraw=true;
+                }
+                if (is_point_inside_button(event.mouse.x, event.mouse.y, NN_selection)) {
+                    is_typing=true;
+                    char temporary[10000]="Insert the number of the file in the list \n (first is 0) to load the neural network:\n";
+                    for(int i=0;i<n_files;i++){
+                        strcat(temporary,valid_names[i]);
+                        strcat(temporary,"\n");
+                    }
+                    strcpy(text_to_show,temporary);
                     redraw = true;
                 }
                 break;
@@ -584,7 +846,24 @@ void testing_loop(){
             case ALLEGRO_EVENT_KEY_UP:
                 key[event.keyboard.keycode] &= KEY_RELEASED;
                 break;
-
+            case ALLEGRO_EVENT_KEY_CHAR:
+                if(is_typing){
+                    if (event.keyboard.unichar >= 32 && event.keyboard.unichar <= 126) {
+                        if (strlen(typed_text) < sizeof(typed_text) - 1) {
+                            int len = strlen(typed_text);
+                            typed_text[len] = (char)event.keyboard.unichar;
+                            typed_text[len + 1] = '\0';
+                            redraw = true;
+                        }
+                    } else if (event.keyboard.keycode == ALLEGRO_KEY_BACKSPACE) {
+                        int len = strlen(typed_text);
+                        if (len > 0) {
+                            typed_text[len - 1] = '\0';
+                            redraw = true;
+                        }
+                    }
+                }
+                break;
             case ALLEGRO_EVENT_DISPLAY_CLOSE:
                 done = true;
                 break;
@@ -595,6 +874,14 @@ void testing_loop(){
 
         if(redraw && al_is_event_queue_empty(queue)){
             //printf("aaaaah\n");
+            if (inference){
+                //printf("here 0\n");
+                forward_propagation(testing_images[index]);
+                int guess=get_best_class(outputs[number_of_layers-1]);
+                printf("guess=%d\n",guess);
+                inference=false;
+                sprintf(boxes[5].text,"RESULT: %d",guess);
+            }
             al_clear_to_color(al_map_rgb(0, 0, 0));
             al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "TESTING");
             for (int i=0;i<num_boxes;i++){
@@ -603,8 +890,18 @@ void testing_loop(){
                 float center_y=(boxes[i].y1+boxes[i].y2)/2;
                 al_draw_textf(font, boxes[i].text_color, center_x, center_y, boxes[i].text_position,"%s" , boxes[i].text);
             }
-            display_next_image(drawing_dim,showing_area.x1,showing_area.y1);//extract one image at random and put as bitmap in the drawing region
+            display_next_image(drawing_dim,showing_area.x1,showing_area.y1, index);//extract one image at random and put as bitmap in the drawing region
             //extract one image at random and put as bitmap in the drawing region
+            plot_metrics(test_results_area,resulting_metrics);
+            if(is_typing){
+                al_draw_filled_rectangle(input_box.x1, input_box.y1, input_box.x2, input_box.y2, input_box.color);
+                float center_x=(input_box.x1+input_box.x2)/2;
+                float center_y=(input_box.y1+input_box.y2)/2;
+                //printf("text to show=%s\n",text_to_show);
+                draw_multiline_text(input_box.text_position,input_box.text_color, font, input_box.x1+10 , input_box.y1,10, text_to_show);
+                //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
+                al_draw_textf(font, input_box.text_color, input_box.x1+10, input_box.y2-20, input_box.text_position, "%s" , typed_text);
+            }
             al_flip_display();
 
             redraw = false;
@@ -650,9 +947,16 @@ void training_loop(){
     bool done=false;
     bool is_training=false;
     bool is_typing=false;
+    bool has_saved=false;
+    bool has_trained=0;
     char typed_text[1000]={"->"};
     char text_to_show[1000];
     int input_button=-1;
+    float loss_train[1000];
+    float loss_val[1000];
+    float epochs[1000];
+    int n_epochs=0;
+    Metrics resulting_metrics;
 
     //i define the buttons needed to select the network structure
     struct Box n_layers_button = create_default_box();
@@ -742,7 +1046,7 @@ void training_loop(){
 
     //i define some default configurations that can be selected with the template reset button
     float default_configs[3][12] = {
-        {1,0,0.1,60000,10000,2,0,0.1,0.9,1,32,20},
+        {1,0,0.1,100,10,2,0,0.1,0.5,1,32,20},
         {2,0,0.1,60000,10000,2,0,0.1,0.9,1,32,20},
         {1,0,0.1,60000,10000,2,0,0.1,0.9,1,32,20}
     };
@@ -865,49 +1169,65 @@ void training_loop(){
                 }
                 if(is_typing && key[ALLEGRO_KEY_ENTER]){
                     //sleep(2);
-                    int reading_result=0;
-                    float x[10];
-                    if(n_inputs[input_button]!=-1){
-                        reading_result=read_input(x, min_input[input_button], max_input[input_button], 
-                        n_inputs[input_button] ,typed_text);
-                    }
-                    else{
-                        reading_result=read_input(x, min_input[input_button], max_input[input_button]
-                        ,parameters[0],typed_text);//se ho cliccato il bottone
-                        //per fissare i neuroni per layer mi aspetto n_layers=parameters[0] valori
-                    }
-                    //printf("%f %f %d %s\n",min_input[input_button], max_input[input_button],n_inputs[input_button],typed_text);
-                    if(reading_result==0){
-                        memset(typed_text, 0, sizeof(typed_text));
-                        typed_text[0]='-';
-                        typed_text[1]='>';
-                    }
-                    else{
-                        if (input_button==num_input_boxes-1) {
-                            int p;
-                            p=x[0];
-                            for (int i=0;i<num_input_boxes-1;i++){
-                                parameters[i]=default_configs[p][i];
-                            }
+                    if(!has_saved){
+                        int reading_result=0;
+                        float x[10];
+                        if(n_inputs[input_button]!=-1){
+                            reading_result=read_input(x, min_input[input_button], max_input[input_button], 
+                            n_inputs[input_button] ,typed_text);
                         }
                         else{
-                            if(n_inputs[input_button]!=-1){
-                                for(int j=0;j<n_inputs[input_button];j++){
-                                    parameters[index_to_par[input_button]+j]=x[j];
+                            reading_result=read_input(x, min_input[input_button], max_input[input_button]
+                            ,parameters[0],typed_text);//se ho cliccato il bottone
+                            //per fissare i neuroni per layer mi aspetto n_layers=parameters[0] valori
+                        }
+                        //printf("%f %f %d %s\n",min_input[input_button], max_input[input_button],n_inputs[input_button],typed_text);
+                        if(reading_result==0){
+                            memset(typed_text, 0, sizeof(typed_text));
+                            typed_text[0]='-';
+                            typed_text[1]='>';
+                        }
+                        else{
+                            if (input_button==num_input_boxes-1) {
+                                int p;
+                                p=x[0];
+                                for (int i=0;i<num_input_boxes-1;i++){
+                                    parameters[i]=default_configs[p][i];
                                 }
                             }
                             else{
-                                for(int j=0;j<parameters[0];j++){
-                                    layers[j]=x[j];
+                                if(n_inputs[input_button]!=-1){
+                                    for(int j=0;j<n_inputs[input_button];j++){
+                                        parameters[index_to_par[input_button]+j]=x[j];
+                                    }
+                                }
+                                else{
+                                    for(int j=0;j<parameters[0];j++){
+                                        layers[j]=x[j];
+                                    }
                                 }
                             }
+                            is_typing=false;
+                            memset(typed_text, 0, sizeof(typed_text));
+                            typed_text[0]='-';
+                            typed_text[1]='>';
+                            memset(text_to_show, 0, sizeof(text_to_show));
+                            //printf("typed text=%s\n",typed_text);
                         }
+                    }
+                    else{
+                        char result_string[100];
+                        for(int j=2;j<strlen(typed_text);j++){
+                            result_string[j-2]=typed_text[j];
+                        }
+                        set_folder_name(".");
+                        save_NN(result_string);
+                        has_saved=false;
                         is_typing=false;
                         memset(typed_text, 0, sizeof(typed_text));
                         typed_text[0]='-';
                         typed_text[1]='>';
                         memset(text_to_show, 0, sizeof(text_to_show));
-                        //printf("typed text=%s\n",typed_text);
                     }
                     redraw=true;
                     //printf("doneeeee\n");
@@ -918,6 +1238,12 @@ void training_loop(){
                 break;
             case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
                 if(!is_training){
+                    if (is_point_inside_button(event.mouse.x, event.mouse.y, save_button)) {
+                        is_typing=true;
+                        has_saved=true;
+                        strcpy(text_to_show,"Insert the name of the file \n to save the neural network");
+                        redraw = true;
+                    }
                     for (int i=0;i<num_input_boxes;i++){
                         if (is_point_inside_button(event.mouse.x, event.mouse.y, input_boxes[i])) {
                             is_typing=true;
@@ -926,14 +1252,43 @@ void training_loop(){
                             input_button=i;
                         }
                     }
-                    //i set the neural network structure
-                    //set at training start
-                    /*define_training_parameters((int)parameters[11],parameters[7], (int)parameters[6], (int)parameters[9], 
-                    0.001, (int)parameters[5], parameters[8]);
-                    //i fix the minimum error to 0.0001
-                    define_network_structure(layers, (int)parameters[0], (int)parameters[1], 0);//i fix initialization to gaussian
-                    set_number_of_inputs((int)parameters[3], (int)parameters[4]);
-                    set_train_val((int)parameters[10], parameters[2]);*/
+                    if (is_point_inside_button(event.mouse.x, event.mouse.y, start_button)) {
+                        is_training=true;
+                        //printf("is_training=%d\n",is_training);
+                        redraw = true;
+                        //i set the neural network structure
+                        //set at training start
+                        set_folder_name("input_folder");
+                        set_number_of_inputs((int)parameters[3], (int)parameters[4]);
+                        load_training_set();
+                        define_training_parameters((int)parameters[11],parameters[7], (int)parameters[6], (int)parameters[9], 
+                        0.001, (int)parameters[5], parameters[8]);
+                        //i fix the minimum error to 0.0001
+                        define_network_structure(layers, (int)parameters[0], (int)parameters[1], 1);//i fix initialization to gaussian
+                        set_train_val((int)parameters[10], parameters[2]);
+                        split_data();
+                        weight_initialization();
+                        /*printf("number of epochs=%d\n",number_of_epochs);
+                        printf("number of training examples=%d\n",number_of_train_images);
+                        printf("number of validation examples=%d\n",number_of_val_images);
+                        printf("lr=%f\n",learning_rate);
+                        printf("momentum=%f\n",momentum);
+                        printf("batch size=%d\n",minibatch_size);
+                        printf("n_layers=%d\n",number_of_layers);
+                        for (int i=0;i<number_of_layers;i++){
+                            printf("neurons in layer %d=%d\n",i,neurons_per_layer[i]);
+                        }
+                        printf("activation function=%d\n",type_of_activation);
+                        printf("initialization=%d\n",type_of_initialization);
+                        printf("optimization=%d\n",type_of_optimization);
+                        printf("sample weight = %f\n",weights[0][0][0]);
+                        printf("shuffling = %d\n",type_of_shuffling);
+                        printf("loss function = %d\n",type_of_loss);*/
+                    }
+                }
+                else if (is_point_inside_button(event.mouse.x, event.mouse.y, stop_button)) {
+                    is_training=false;
+                    has_trained=true;
                 }
                 break;
             case ALLEGRO_EVENT_KEY_DOWN:
@@ -967,7 +1322,7 @@ void training_loop(){
 
         if(done)
             break;
-
+        //printf("%d",is_training);
         if(redraw && al_is_event_queue_empty(queue)){
             if(!is_training){
                 for (int i=0;i<num_input_fields;i++){
@@ -1027,6 +1382,13 @@ void training_loop(){
                 float center_y=(training_boxes[i].y1+training_boxes[i].y2)/2;
                 al_draw_textf(font, training_boxes[i].text_color, center_x, center_y, training_boxes[i].text_position, "%s" , training_boxes[i].text);
             }
+            if(has_trained || is_training){
+                draw_plot(plot_region,loss_train,epochs,n_epochs,al_map_rgb(0, 0, 255));
+                draw_plot(plot_region,loss_val,epochs,n_epochs,al_map_rgb(255, 0, 0));
+            }
+            if(has_trained){
+                plot_metrics(results_region,resulting_metrics);
+            }
             if(is_typing){
                 al_draw_filled_rectangle(input_box.x1, input_box.y1, input_box.x2, input_box.y2, input_box.color);
                 float center_x=(input_box.x1+input_box.x2)/2;
@@ -1036,9 +1398,34 @@ void training_loop(){
                 //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
                 al_draw_textf(font, input_box.text_color, input_box.x1+10, input_box.y2-20, input_box.text_position, "%s" , typed_text);
             }
+            /*float test_input[100]={2.3,2.3,2.3,2.3};
+            float eee[100]={0,1,2,3,4};
+            draw_plot(plot_region,test_input,eee,2,al_map_rgb(0, 0, 255));
+            draw_plot(plot_region,test_input,eee,4,al_map_rgb(0, 0, 255));*/
             al_flip_display();
-
             redraw = false;
+        }
+        if(is_training && al_is_event_queue_empty(queue)){
+            redraw=true;
+            printf("learning epoch %d in progress\n",n_epochs);
+            learn_epoch();
+            epochs[n_epochs]=n_epochs;
+            loss_train[n_epochs]=error_on_epoch;
+            printf("loss on training set=%f\n",loss_train[n_epochs]);
+            float probabilities[number_of_val_images][10];
+            inference_on_set(validation_images,probabilities, number_of_val_images);
+            loss_val[n_epochs]=loss_on_set(validation_labels,probabilities,number_of_val_images,type_of_loss);
+            n_epochs++;
+            if(n_epochs>=number_of_epochs){
+                is_training=false;
+                has_trained=true;
+                float p_test[number_of_val_images][10];
+                inference_on_set(validation_images,p_test, number_of_val_images);
+                resulting_metrics=compute_metrics(probabilities,validation_labels, number_of_val_images);
+
+            }
+            printf("loss on validation set=%f\n",loss_val[n_epochs-1]);
+            fflush(stdout);
         }
     }
     destroy_graphics();
@@ -1067,7 +1454,7 @@ void training_loop(){
 }
 */
 
-void process_drawing_region(int dim, int **drawing_matrix){
+int process_drawing_region(int dim, int **drawing_matrix){
     //i determine the maximum value of the drawing matrix
     /*int max=drawing_matrix[0][0];
     for (int i=0;i<dim;i++){
@@ -1116,7 +1503,10 @@ void process_drawing_region(int dim, int **drawing_matrix){
             }
         }
     }
-    //print_image(image);
+    forward_propagation(image);
+    int guess=get_best_class(outputs[number_of_layers-1]);
+    print_image(image);
+    return guess;
 }
 
 void upsample_image(int image[28][28], int dim, int upsampled_image[dim][dim]){
@@ -1183,12 +1573,11 @@ ALLEGRO_BITMAP *create_bitmap_from_image(int dim, int image[dim][dim]){
     return bitmap;
 }
 
-void display_next_image(int dim, int x, int y){
+void display_next_image(int dim, int x, int y,int index){
     //i take the next image from the test set
-    printf("This will be printed before the error occurs.\n");
-    fflush(stdout);
-    int index=rand()%number_of_test_images;
-    printf("%d\n",index);
+    /*printf("This will be printed before the error occurs.\n");
+    fflush(stdout);*/
+    //printf("%d\n",index);
     int upsampled_image[dim][dim];
     /*int **upsampled_image=(int **)malloc(dim * sizeof(int *));
     for(int i = 0; i < dim; i++) {
@@ -1203,5 +1592,93 @@ void display_next_image(int dim, int x, int y){
         free(upsampled_image[i]);
     }
     free(upsampled_image);*/
+}
+
+void draw_plot(struct Box container , float *y, float *x, int dim, ALLEGRO_COLOR color){
+    float spacing=10;
+    int delta_epochs=10;
+    float thickness=2;
+    float label_spacing=5;
+    float tick_dimension=1;
+    if(x_pos_sup==-1){
+        x_pos_sup=container.x2-spacing;
+        x_pos_inf=container.x1+spacing;
+        y_pos_sup=container.y1+spacing;
+        y_pos_inf=container.y2-spacing;
+        y_lim_sup=y[0];
+    }
+    //calcolo massimo minimo etc
+    float max_x=x[0];
+    float max_y=y[0];
+    float min_y=y[0];
+    for (int i=0;i<dim;i++){
+        if(x[i]>max_x){
+            max_x=x[i];
+        }
+        if(y[i]>max_y){
+            max_y=y[i];
+        }
+        if(y[i]<min_y){
+            min_y=y[i];
+        }
+    }
+    if(max_x>x_lim_sup){
+        x_lim_sup+=delta_epochs;
+    }
+    if(max_y>y_lim_sup){
+        y_lim_sup=max_y;
+    }
+    float scale_y = (y_lim_inf-y_lim_sup)/(y_pos_inf-y_pos_sup); // Scale factor for better visualization
+    float scale_x = (x_lim_sup-x_lim_inf)/(x_pos_sup-x_pos_inf); // Scale factor for better visualization
+    //scale=dvalue/dposition_in_box
+    for (int i = 1; i < dim; i++) {
+        float x1=(x[i-1]-x_lim_inf)/scale_x+x_pos_inf;
+        float x2=(x[i]-x_lim_inf)/scale_x+x_pos_inf;
+        float y1=(y[i-1]-y_lim_inf)/scale_y+y_pos_inf;
+        float y2=(y[i]-y_lim_inf)/scale_y+y_pos_inf;
+        // Draw a line segment connecting (x1, y1) and (x2, y2)
+        al_draw_line(x1, y1, x2, y2, color, thickness);
+    }
+    al_draw_line(x_pos_sup, y_pos_inf, x_pos_inf, y_pos_inf, color, thickness/2);
+    al_draw_line(x_pos_inf, y_pos_inf, x_pos_inf, y_pos_sup, color, thickness/2);
+    al_draw_line(x_pos_inf-tick_dimension, y_pos_inf, x_pos_inf+tick_dimension, y_pos_inf, color, thickness/2);
+    al_draw_textf(font, al_map_rgb(0,0,0), x_pos_inf-label_spacing, y_pos_inf, 0, "%.3f" , y_lim_inf);
+    al_draw_line(x_pos_inf-tick_dimension, y_pos_sup, x_pos_inf+tick_dimension, y_pos_sup, color, thickness/2);
+    al_draw_textf(font, al_map_rgb(0,0,0), x_pos_inf-label_spacing, y_pos_sup, 0, "%.3f" , y_lim_sup);
+    for(int i=0;i<x_lim_sup;i++){
+        float x_pos=(x[i]-x_lim_inf)/scale_x+x_pos_inf;
+        al_draw_line(x_pos, y_pos_inf-tick_dimension, x_pos, y_pos_inf+tick_dimension, color, thickness/2);
+        al_draw_textf(font, al_map_rgb(0,0,0), x_pos, y_pos_inf+label_spacing, 0, "%d" , (int)x[i]);
+    }
+}
+
+void plot_metrics(struct Box results_region,Metrics resulting_metrics){
+    float border=5;
+    float spacing=(results_region.x2-results_region.x1)/4.0;
+    float x_coordinates[4];
+    float y_spacing=(results_region.y2-results_region.y1)/11.0;
+    float y_coordinates[n_classes+1];
+    float global_metrics[5]={resulting_metrics.overall_accuracy,resulting_metrics.macro_precision,
+    resulting_metrics.macro_recall,resulting_metrics.micro_recall,resulting_metrics.micro_precision};
+    char global_metrics_names[5][20]={ "ACC","MP","MR","mr","mp"};
+    char column_names[4][20]={"Class","Precision","Recall","Global metrics"};
+    for(int i=0;i<4;i++){
+        x_coordinates[i]=results_region.x1+border+spacing*i;
+    }
+    for(int i=0;i<n_classes+1;i++){
+        y_coordinates[i]=results_region.y1+border+y_spacing*i;
+    }
+    for(int i=0;i<4;i++){
+        al_draw_textf(font, al_map_rgb(0,0,0), x_coordinates[i], y_coordinates[0], 0, "%s" , column_names[i]);
+    }
+    for(int i=0;i<n_classes;i++){
+        al_draw_textf(font, al_map_rgb(0,0,0), x_coordinates[0], y_coordinates[i+1], 0, "%d" , i);
+        al_draw_textf(font, al_map_rgb(0,0,0), x_coordinates[1], y_coordinates[i+1], 0, "%.1f" , resulting_metrics.precisions[i]);
+        al_draw_textf(font, al_map_rgb(0,0,0), x_coordinates[2], y_coordinates[i+1], 0, "%.1f" , resulting_metrics.recalls[i]);
+        if(i<5){
+            al_draw_textf(font, al_map_rgb(0,0,0), x_coordinates[3], y_coordinates[i+1], 0, 
+            "%s: %.2f" , global_metrics_names[i],global_metrics[i]);
+        }
+    }
 }
 

@@ -113,12 +113,13 @@ float mean_squared_error(int *t, float *y, int dim);
 void train_network();
 float *get_probabilities(int input[input_size][input_size]);
 int get_best_class(float input[n_classes]);
-float loss_on_example(int *label,int t_loss);
+float loss_on_example(int *label,float *probabilities,int t_loss);
 void testing_layer_initialization(int n_layer);
 float optimizer_w(float delta, float input, float dw_prev);
 float optimizer_b(float delta, float db_prev);
 void load_model(char *filename);
 void save_NN(char *filename);
+float loss_on_set(int (*labels)[n_classes],float (*probabilities)[n_classes], int dim, int t_loss);
 
 float *int_to_float(float *y,int *x, int dim){
     for (int i=0; i<dim; i++){
@@ -274,7 +275,7 @@ void load_training_set()
     fptr = fopen(strcat(temporary,"/train-labels-idx1-ubyte"),"rb");
     if(fptr == NULL)
     {
-        printf("Error opening file!");   
+        printf("Error opening file train labels!");   
         exit(1);             
     }
     int labels[number_of_inputs];
@@ -649,7 +650,7 @@ void forward_propagation(int input[input_size][input_size])
 void learn_example(int index_of_example)
 {
     forward_propagation(training_images[index_of_example]);
-    error_on_batch +=loss_on_example(training_labels[index_of_example],type_of_loss);
+    error_on_batch +=loss_on_example(training_labels[index_of_example],outputs[number_of_layers-1],type_of_loss);
     float *input_linear = lin_and_norm(training_images[index_of_example]);
     float deltas[number_of_layers][max_neurons_per_layer];
     for (int l=number_of_layers-1; l>=0; l--)//i start from the last layer 
@@ -871,20 +872,28 @@ float mean_squared_error(int *t, float *y, int dim)
 //---------------------------
 //metrics
 //this has to be applied after the forward pass function
-float loss_on_example(int *label,int t_loss)
+float loss_on_example(int *label, float *probabilities,int t_loss)
 {
     //takes in input the type of loss function
     switch (t_loss){
         case 0: //log likelihood
-            return log_likelihood(label,outputs[number_of_layers-1],neurons_output_layer);
+            return log_likelihood(label,probabilities,neurons_output_layer);
             break;
         case 1: //mse
-            return mean_squared_error(label,outputs[number_of_layers-1],neurons_output_layer);
+            return mean_squared_error(label,probabilities,neurons_output_layer);
             break;
         default: // log likelihood
-            return log_likelihood(label,outputs[number_of_layers-1],neurons_output_layer);
+            return log_likelihood(label,probabilities,neurons_output_layer);
             break;
     }
+}
+
+float loss_on_set(int (*labels)[n_classes],float (*probabilities)[n_classes], int dim, int t_loss){
+    float loss=0;
+    for (int i=0;i<dim;i++){
+        loss+=loss_on_example(labels[i],probabilities[i],t_loss);
+    }
+    return loss/dim;
 }
 
 void inference_on_set(int (*input_examples)[input_size][input_size], float (*probabilities)[10], int dim){
@@ -994,8 +1003,12 @@ void save_NN(char *filename) {
     char temporary[100];
     strcpy(temporary,main_folder_name);
     strcat(temporary,"/models/");
+    //printf("%s\n",strcat(temporary,filename)); //input_folder/models/first_working_model
     FILE *file = fopen(strcat(temporary,filename), "w");
-    if (file == NULL) return;
+    if (file == NULL) {
+        printf("Error opening file!\n");
+        return;
+    }
     //save network structure
     fprintf(file, "%d\n", number_of_layers-1);//number of hidden layers
     for(int i=0;i<number_of_layers-1;i++){
@@ -1031,7 +1044,10 @@ void load_model(char *filename)
     strcpy(temporary,main_folder_name);
     strcat(temporary,"/models/");
     FILE *file = fopen(strcat(temporary,filename), "r");
-    if (file == NULL) return;
+    if (file == NULL) {
+        printf("Error opening file!\n");
+        return;
+    }
     
     int n_hid_layers=0;
     int npl[n_hid_layers];

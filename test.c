@@ -13,8 +13,10 @@
 
 
 int main() {
-    unsigned int seed = 12345; // Example fixed seed
+    unsigned int seed = 1234; // Example fixed seed
     srand(seed);
+    menu_loop();
+    //set_folder_name("input_data");
     //training_loop();
     //srand(time(NULL));
 
@@ -47,8 +49,12 @@ int main() {
     //test_accuracy();
     test_inference_on_set();
     test_compute_metrics();
-    test_testing_loop();
-    test_training_loop();*/
-    test_training_graphics();
+    test_testing_loop();*/
+    //test_training_loop();
+    //test_training_graphics();
+    //test_save_model();
+    //test_load_model();
+    //interactive_loop();
+    //testing_loop();
     return 0;
 }
