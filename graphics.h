@@ -53,14 +53,20 @@ struct Box{
     int text_position;
     ALLEGRO_COLOR text_color;
 };
+typedef struct{
+    struct Box boxes[MAX_BUTTONS];
+    int num_boxes;
+} Boxes;
+
 bool drawing = false; // Flag to track whether we are currently drawing
 bool inference = false;
 bool is_typing=false;
 char typed_text[1000]={"->"};
 char text_to_show[1000];
-float last_x = 0, last_y = 0; // Keep track of the last position
 
 char valid_names[100][MAX_FILE_NAME_LENGTH];
+char result_string[100];
+
 
 void display_training_interface();
 void display_testing_interface();
@@ -94,6 +100,16 @@ int read_filename(char (*valid_names)[MAX_FILE_NAME_LENGTH], int dim,char *text)
 int read_filenames_from_directory(char (*filenames)[MAX_FILE_NAME_LENGTH]);
 void draw_matrix(int **drawing_matrix, int drawing_x,int drawing_y,int dim);
 void show_typing_interface(struct Box input_box, char *text_to_show, char *typed_text);
+void load_saved_model(int n_files,struct Box *box);
+void get_keyboard_input();
+void draw_box_elements(struct Box *boxes,int num_boxes);
+void print_network_characteristics();
+void init_input_box(struct Box *input_box);
+Boxes initialize_testing_boxes();
+Boxes initialize_interactive_boxes();
+Boxes initialize_training_training_boxes();
+Boxes initialize_training_input_fields(int num_input_fields);
+Boxes initialize_training_input_boxes();
 
 int read_filenames_from_directory(char (*filenames)[MAX_FILE_NAME_LENGTH]) {
     char *directoryPath;
@@ -280,9 +296,6 @@ void generic_initialization()
     al_register_event_source(queue, al_get_timer_event_source(timer));
     al_register_event_source(queue, al_get_mouse_event_source());
 
-    done = false;
-    redraw = true;
-
     x_graphics = 100;
     y_graphics = 100;
 
@@ -293,11 +306,13 @@ void generic_initialization()
     drawing = false; // Flag to track whether we are currently drawing
     inference = false;
     is_typing=false;
-    typed_text[1000]={"->"};
-    text_to_show[1000];
-    last_x = 0, last_y = 0; // Keep track of the last position
+    done = false;
+    redraw = true;
 
     valid_names[100][MAX_FILE_NAME_LENGTH];
+    result_string[100];
+    memset(result_string, 0, sizeof(result_string));
+
 
 }
 
@@ -309,13 +324,8 @@ void destroy_graphics()
     al_destroy_event_queue(queue);
 }
 
-void menu_initialization()
-{
-    generic_initialization();
-}
-
 void menu_loop(){
-    menu_initialization();
+    generic_initialization();
     int x_blocks=width/5; //i divide in fifths and the buttons take the central fifth
     int y_blocks=height/10; //the three boxes will go in 
     int submenu=-1;//index to tell in which windows i need to go when menu is closed
@@ -409,9 +419,6 @@ void menu_loop(){
     }
 }
 
-void interactive_mode_initialization(){
-    generic_initialization();
-}
 
 void drawing_function(int x, int y, int drawing_x,int drawing_y, int r,int dim,int **drawing_matrix){
     al_draw_filled_rectangle(x-r, y-r, x+r, y+r, al_map_rgb(0, 0, 0));
@@ -443,30 +450,23 @@ void draw_matrix(int **drawing_matrix, int drawing_x,int drawing_y,int dim){
 //which elements i want in the window? A window where i can draw numbers with the mouse
 //a window where i can select the network to use
 void interactive_loop(){
-    interactive_mode_initialization();
-    
+    generic_initialization();
+    float last_x = 0, last_y = 0; // Keep track of the last position
+    int submenu=2;//index to tell in which windows i need to go when menu is closed
     int n_files=read_filenames_from_directory(valid_names);
     /*for(int i=0;i<n_files;i++){
         printf("%s\n",valid_names[i]);
     }*/
 
-    int x_blocks=width/6; //i divide in fifths and the buttons take the central fifth
-    int y_blocks=height/6; //the three boxes will go in 
-    int x_blocks_fine=width/12; //i divide in fifths and the buttons take the central fifth
-    int y_blocks_fine=height/12; //the three boxes will go in 
-    int submenu=2;//index to tell in which windows i need to go when menu is closed
-    struct Box clear_button = create_default_box();
-    struct Box NN_selection = create_default_box();
-    struct Box NN_selection_result = create_default_box();
-    struct Box result_box = create_default_box();
-    struct Box drawing_area = create_default_box();
-    struct Box submit_button = create_default_box();
-    //i define the drawing region
-    drawing_area.color=al_map_rgb(255, 255, 255);
-    drawing_area.x1=x_blocks*2;
-    drawing_area.x2=x_blocks*4;
-    drawing_area.y1=y_blocks;
-    drawing_area.y2=y_blocks+drawing_area.x2-drawing_area.x1;
+    Boxes graphic_elements=initialize_interactive_boxes();
+    struct Box *boxes=graphic_elements.boxes;
+    int num_boxes=graphic_elements.num_boxes;
+    struct Box clear_button = boxes[0];
+    struct Box NN_selection = boxes[1];
+    struct Box NN_selection_result = boxes[2];
+    struct Box result_box = boxes[3];
+    struct Box drawing_area = boxes[4];
+    struct Box submit_button = boxes[5];
     int dim_drawing=drawing_area.x2-drawing_area.x1;
     int **drawing_matrix;
     drawing_matrix = (int **)malloc(dim_drawing * sizeof(int *));
@@ -478,58 +478,10 @@ void interactive_loop(){
             drawing_matrix[i][j]=0;
         }
     }
-    //i define the clear button
-    clear_button.color=al_map_rgba(0, 255, 0,0.6);
-    clear_button.x1=x_blocks_fine*9;
-    clear_button.x2=x_blocks_fine*10;
-    clear_button.y1=y_blocks_fine*4;
-    clear_button.y2=y_blocks_fine*5;
-    strcpy(clear_button.text,"CLEAR");
-    //i define the selection button
-    NN_selection.color=al_map_rgba(255, 255, 0,1);
-    NN_selection.x1=x_blocks_fine*9;
-    NN_selection.x2=x_blocks_fine*10;
-    NN_selection.y1=y_blocks_fine*6;
-    NN_selection.y2=y_blocks_fine*7;
-    NN_selection.text_color=al_map_rgb(0, 0, 0);
-    strcpy(NN_selection.text,"SELECT NN");
-    //i define the selection button
-    NN_selection_result.color=al_map_rgb(255, 255, 255);
-    NN_selection_result.x1=x_blocks_fine*10;
-    NN_selection_result.x2=x_blocks_fine*11;
-    NN_selection_result.y1=y_blocks_fine*6;
-    NN_selection_result.y2=y_blocks_fine*7;
-    NN_selection_result.text_color=al_map_rgb(0, 0, 0);
-    strcpy(NN_selection_result.text," ");
-    //i define the result region
-    result_box.color=al_map_rgb(255, 255, 255);
-    result_box.x1=x_blocks_fine*5;
-    result_box.x2=x_blocks_fine*7;
-    result_box.y1=drawing_area.y2+y_blocks_fine;
-    result_box.y2=result_box.y1+y_blocks_fine;
-    result_box.text_position=2;//left aligned
-    result_box.text_color=al_map_rgb(0, 0, 0);
-    strcpy(result_box.text,"RESULT:");
-    //i define the submit button
-    submit_button.color=al_map_rgb(255, 0, 0);
-    submit_button.x1=x_blocks_fine*10;
-    submit_button.x2=x_blocks_fine*11;
-    submit_button.y1=y_blocks_fine*4;
-    submit_button.y2=y_blocks_fine*5;
-    strcpy(submit_button.text,"SUBMIT");
-    const int num_boxes=6;
-    struct Box boxes[MAX_BUTTONS]={clear_button,NN_selection,NN_selection_result,result_box,drawing_area,submit_button};
+    
     
     struct Box input_box = create_default_box();
-    input_box.color=al_map_rgb(255, 255, 255);
-    int x,y,w,h;
-    place_object_grid(&x,&y,&w,&h,1,1,8,8,1/10.0, 1/10.0);
-    input_box.x1=x;
-    input_box.x2=x+w;
-    input_box.y1=y;
-    input_box.y2=y+h;
-    input_box.text_color=al_map_rgb(0, 0, 0);
-    input_box.text_position=0;
+    init_input_box(&input_box);
 
     while(1){
         al_wait_for_event(queue, &event);
@@ -543,21 +495,7 @@ void interactive_loop(){
                 }
                 if(is_typing && key[ALLEGRO_KEY_ENTER]){
                     //int i_file=read_filename(valid_names, n_files,typed_text);
-                    float result_input[1];
-                    read_input(result_input, 0, n_files, 1,typed_text);
-                    int i_file=(int)result_input[0];
-                    //set_folder_name(".");
-                    //printf("%d\n",i_file);
-                    printf("Loading model %s\n",valid_names[i_file]);
-                    sprintf(boxes[2].text,"%s",valid_names[i_file]);//boxes[3] is the result box
-                    //for the NN selection
-                    load_model(valid_names[i_file]);
-                    is_typing=false;
-                    memset(typed_text, 0, sizeof(typed_text));
-                    typed_text[0]='-';
-                    typed_text[1]='>';
-                    memset(text_to_show, 0, sizeof(text_to_show));
-                    redraw=true;
+                    load_saved_model(n_files,&boxes[2]);
                 }
                 for(int i = 0; i < ALLEGRO_KEY_MAX; i++)
                     key[i] &= KEY_SEEN;
@@ -565,7 +503,6 @@ void interactive_loop(){
                 break;
             case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
                 if (is_point_inside_button(event.mouse.x, event.mouse.y, clear_button)) {
-                    // Button was clicked, perform an action
                     redraw = true;
                     //clear drawing matrix
                     for (int i=0;i<dim_drawing;i++){
@@ -615,20 +552,7 @@ void interactive_loop(){
                 break;
             case ALLEGRO_EVENT_KEY_CHAR:
                 if(is_typing){
-                    if (event.keyboard.unichar >= 32 && event.keyboard.unichar <= 126) {
-                        if (strlen(typed_text) < sizeof(typed_text) - 1) {
-                            int len = strlen(typed_text);
-                            typed_text[len] = (char)event.keyboard.unichar;
-                            typed_text[len + 1] = '\0';
-                            redraw = true;
-                        }
-                    } else if (event.keyboard.keycode == ALLEGRO_KEY_BACKSPACE) {
-                        int len = strlen(typed_text);
-                        if (len > 0) {
-                            typed_text[len - 1] = '\0';
-                            redraw = true;
-                        }
-                    }
+                    get_keyboard_input();
                 }
                 break;
             case ALLEGRO_EVENT_DISPLAY_CLOSE:
@@ -657,14 +581,7 @@ void interactive_loop(){
             }
             al_clear_to_color(al_map_rgb(0, 0, 0));
             al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "INTERACTIVE");
-            for (int i=0;i<num_boxes;i++){
-                al_draw_filled_rectangle(boxes[i].x1, boxes[i].y1, boxes[i].x2, boxes[i].y2, boxes[i].color);
-                float center_x=(boxes[i].x1+boxes[i].x2)/2;
-                float center_y=(boxes[i].y1+boxes[i].y2)/2;
-                al_draw_textf(font, boxes[i].text_color, center_x, center_y, boxes[i].text_position, "%s" ,boxes[i].text);
-                /*printf("%s\n" ,boxes[i].text);
-                printf("%s\n" ,result_box.text);*/
-            }
+            draw_box_elements(boxes,num_boxes);
             draw_matrix(drawing_matrix,drawing_area.x1,drawing_area.y1,dim_drawing);
             if(is_typing){
                 show_typing_interface(input_box,text_to_show,typed_text);
@@ -689,112 +606,32 @@ void interactive_loop(){
     }
 }
 
-void testing_mode_initialization(){
-    generic_initialization();
-}
-
 void testing_loop(){
-    testing_mode_initialization();
+    generic_initialization();
     //set_folder_name("input_folder");
     set_number_of_inputs(60000, 10000);
     load_test_set();
 
-    bool inference = false;
-    bool is_typing=false;
-    char typed_text[1000]={"->"};
-    char text_to_show[1000];
-    char valid_names[100][MAX_FILE_NAME_LENGTH];
     int n_files=read_filenames_from_directory(valid_names);
     int index=rand()%number_of_test_images;
+    int submenu=1;//index to tell in which windows i need to go when menu is closed
     Metrics resulting_metrics;
 
-    int x_blocks=width/6; //i divide in fifths and the buttons take the central fifth
-    int y_blocks=height/6; //the three boxes will go in 
-    int x_blocks_fine=width/12; //i divide in fifths and the buttons take the central fifth
-    int y_blocks_fine=height/12; //the three boxes will go in 
-    int submenu=1;//index to tell in which windows i need to go when menu is closed
-    struct Box next_button = create_default_box();
-    struct Box submit_button = create_default_box();
-    struct Box NN_selection = create_default_box();
-    struct Box NN_selection_result = create_default_box();
-    struct Box start_test_box = create_default_box();
-    struct Box result_box = create_default_box();
-    struct Box showing_area = create_default_box();
-    struct Box test_results_area = create_default_box();
-    //i define the drawing region
-    showing_area.color=al_map_rgb(255, 255, 255);
-    showing_area.x1=x_blocks_fine*7;
-    showing_area.x2=x_blocks_fine*10;
-    showing_area.y1=y_blocks_fine;
-    showing_area.y2=y_blocks+showing_area.x2-showing_area.x1;
+    Boxes graphic_elements=initialize_testing_boxes();
+    struct Box *boxes=graphic_elements.boxes;
+    int num_boxes=graphic_elements.num_boxes;
+    struct Box test_results_area=boxes[7];
+    struct Box showing_area=boxes[6];
+    struct Box result_box=boxes[5];
+    struct Box start_test_box=boxes[4];
+    struct Box NN_selection_result=boxes[3];
+    struct Box NN_selection=boxes[2];
+    struct Box submit_button=boxes[1];
+    struct Box next_button=boxes[0];
     int drawing_dim=showing_area.x2-showing_area.x1;
-    //I define the are where i will plot the results
-    test_results_area.color=al_map_rgb(255, 255, 255);
-    test_results_area.x1=x_blocks_fine*1;
-    test_results_area.x2=x_blocks_fine*5;
-    test_results_area.y1=y_blocks_fine*3;
-    test_results_area.y2=y_blocks_fine*11;
-    strcpy(test_results_area.text,"TEST RESULTS");
-    //i define the next button
-    next_button.color=al_map_rgba(0, 255, 0,0.6);
-    next_button.x1=x_blocks_fine*9;
-    next_button.x2=x_blocks_fine*10;
-    next_button.y1=showing_area.y2+y_blocks_fine;
-    next_button.y2=next_button.y1+y_blocks_fine;
-    strcpy(next_button.text,"NEXT");
-    //i define the submit button
-    submit_button.color=al_map_rgba(255, 0, 0,0.6);
-    submit_button.x1=x_blocks_fine*10;
-    submit_button.x2=x_blocks_fine*11;
-    submit_button.y1=showing_area.y2+y_blocks_fine;
-    submit_button.y2=next_button.y1+y_blocks_fine;
-    strcpy(submit_button.text,"SUBMIT");
-    //i define the selection button
-    NN_selection.color=al_map_rgba(0, 255, 0,1);
-    NN_selection.x1=test_results_area.x1;
-    NN_selection.x2=test_results_area.x1+2*x_blocks_fine;
-    NN_selection.y1=y_blocks_fine;
-    NN_selection.y2=y_blocks_fine*2;
-    NN_selection_result.text_color=al_map_rgb(0, 0, 0);
-    strcpy(NN_selection.text,"SELECT NN");
-    //i define the selection button
-    NN_selection_result.color=al_map_rgb(255, 255, 255);
-    NN_selection_result.x1=NN_selection.x2;
-    NN_selection_result.x2=NN_selection_result.x1+2*x_blocks_fine;
-    NN_selection_result.y1=y_blocks_fine;
-    NN_selection_result.y2=y_blocks_fine*2;
-    NN_selection_result.text_color=al_map_rgb(0, 0, 0);
-    strcpy(NN_selection_result.text," ");
-    //i define the button to start execution of test on test set
-    start_test_box.color=al_map_rgba(0, 255, 0,1);
-    start_test_box.x1=x_blocks_fine*6;
-    start_test_box.x2=submit_button.x2;
-    start_test_box.y1=next_button.y2+y_blocks_fine;
-    start_test_box.y2=start_test_box.y1+y_blocks_fine;
-    strcpy(start_test_box.text,"START TEST");
-    //i define the result region
-    result_box.color=al_map_rgb(255, 255, 255);
-    result_box.x1=x_blocks_fine*6;
-    result_box.x2=x_blocks_fine*8;
-    result_box.y1=showing_area.y2+y_blocks_fine;
-    result_box.y2=result_box.y1+y_blocks_fine;
-    result_box.text_position=2;//left aligned
-    result_box.text_color=al_map_rgb(0, 0, 0);
-    strcpy(result_box.text,"RESULT:");
-    const int num_boxes=8;
-    struct Box boxes[MAX_BUTTONS]={next_button,submit_button,NN_selection,NN_selection_result,
-    start_test_box,result_box,showing_area,test_results_area};
 
     struct Box input_box = create_default_box();
-    input_box.color=al_map_rgb(255, 255, 255);
-    int x,y,w,h;
-    place_object_grid(&x,&y,&w,&h,1,1,8,8,1/10.0, 1/10.0);
-    input_box.x1=x;
-    input_box.x2=x+w;
-    input_box.y1=y;
-    input_box.y2=y+h;
-    input_box.text_color=al_map_rgb(0, 0, 0);
-    input_box.text_position=0;
+    init_input_box(&input_box);
 
     while(1){
         al_wait_for_event(queue, &event);
@@ -808,21 +645,8 @@ void testing_loop(){
                 }
                 if(is_typing && key[ALLEGRO_KEY_ENTER]){
                     //int i_file=read_filename(valid_names, n_files,typed_text);
-                    float result_input[1];
-                    read_input(result_input, 0, n_files, 1,typed_text);
-                    int i_file=(int)result_input[0];
-                    //set_folder_name(".");
-                    //printf("%d\n",i_file);
-                    printf("Loading model %s\n",valid_names[i_file]);
-                    sprintf(boxes[3].text,"%s",valid_names[i_file]);//boxes[3] is the result box
-                    //for the NN selection
-                    load_model(valid_names[i_file]);
-                    is_typing=false;
-                    memset(typed_text, 0, sizeof(typed_text));
-                    typed_text[0]='-';
-                    typed_text[1]='>';
-                    memset(text_to_show, 0, sizeof(text_to_show));
-                    redraw=true;
+                    load_saved_model(n_files,&boxes[3]);
+                    //printf("2) %s \n", boxes[3].text);
                 }
                 for(int i = 0; i < ALLEGRO_KEY_MAX; i++)
                     key[i] &= KEY_SEEN;
@@ -864,20 +688,7 @@ void testing_loop(){
                 break;
             case ALLEGRO_EVENT_KEY_CHAR:
                 if(is_typing){
-                    if (event.keyboard.unichar >= 32 && event.keyboard.unichar <= 126) {
-                        if (strlen(typed_text) < sizeof(typed_text) - 1) {
-                            int len = strlen(typed_text);
-                            typed_text[len] = (char)event.keyboard.unichar;
-                            typed_text[len + 1] = '\0';
-                            redraw = true;
-                        }
-                    } else if (event.keyboard.keycode == ALLEGRO_KEY_BACKSPACE) {
-                        int len = strlen(typed_text);
-                        if (len > 0) {
-                            typed_text[len - 1] = '\0';
-                            redraw = true;
-                        }
-                    }
+                    get_keyboard_input();
                 }
                 break;
             case ALLEGRO_EVENT_DISPLAY_CLOSE:
@@ -900,12 +711,7 @@ void testing_loop(){
             }
             al_clear_to_color(al_map_rgb(0, 0, 0));
             al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "TESTING");
-            for (int i=0;i<num_boxes;i++){
-                al_draw_filled_rectangle(boxes[i].x1, boxes[i].y1, boxes[i].x2, boxes[i].y2, boxes[i].color);
-                float center_x=(boxes[i].x1+boxes[i].x2)/2;
-                float center_y=(boxes[i].y1+boxes[i].y2)/2;
-                al_draw_textf(font, boxes[i].text_color, center_x, center_y, boxes[i].text_position,"%s" , boxes[i].text);
-            }
+            draw_box_elements(boxes,num_boxes);
             display_next_image(drawing_dim,showing_area.x1,showing_area.y1, index);//extract one image at random and put as bitmap in the drawing region
             //extract one image at random and put as bitmap in the drawing region
             plot_metrics(test_results_area,resulting_metrics);
@@ -928,10 +734,6 @@ void testing_loop(){
     }
 }
 
-void training_mode_initialization(){
-    generic_initialization();
-}
-
 void place_object(int x,int y,float x_ratio, float y_ratio){
     //you fix the postion of the upper left corner of the object relative
     //to the upper left corner of the window using the fraction of screen as coordinate
@@ -950,50 +752,55 @@ void place_object_grid(int *x,int *y,int *w, int *h, int x_grid, int y_grid, int
 }
 
 void training_loop(){
-    training_mode_initialization();
+    generic_initialization();
 
     //i initialize the boolean variables that describe the state of execution
     int submenu=0;//index to tell in which windows i need to go when menu is closed
-    bool done=false;
     bool is_training=false;
-    bool is_typing=false;
     bool is_saveing=false;
     bool has_trained=0;
-    char typed_text[1000]={"->"};
-    char text_to_show[1000];
     int input_button=-1;
     float loss_train[1000];
     float loss_val[1000];
     float epochs[1000];
     int n_epochs=0;
     Metrics resulting_metrics;
-    char result_string[100];
-    memset(result_string, 0, sizeof(result_string));
 
-    //i define the buttons needed to select the network structure
-    struct Box n_layers_button = create_default_box();
-    struct Box neurons_per_layer_button = create_default_box();
-    struct Box activation_button = create_default_box();
-    struct Box train_val_split_button = create_default_box();
-    struct Box n_train_test_button = create_default_box();
-    struct Box optimization_button = create_default_box();
-    struct Box loss_button = create_default_box();
-    struct Box learning_rate_button = create_default_box();
-    struct Box momentum_button = create_default_box();
-    struct Box shuffling_button = create_default_box();
-    struct Box batch_size_button = create_default_box();
-    struct Box epochs_button = create_default_box();
-    struct Box reset_template_button = create_default_box();
-    int num_input_boxes=13;
-    struct Box input_boxes[MAX_BUTTONS]={n_layers_button,neurons_per_layer_button,
-    activation_button, train_val_split_button,n_train_test_button,optimization_button,
-    loss_button,learning_rate_button,momentum_button,shuffling_button,
-    batch_size_button,epochs_button, reset_template_button};
-    struct Box input_fields[MAX_BUTTONS];
+    Boxes graphic_elements=initialize_training_input_boxes();
+    struct Box *input_boxes=graphic_elements.boxes;
+    int num_input_boxes=graphic_elements.num_boxes;
     int num_input_fields=num_input_boxes-1;
-    char input_text[13][25]={"N LAYERS","NEURONS PER LAYER","ACTIVATION","TRAIN VAL SPLIT",
-    "N TRAIN TEST","OPTIMIZATION","LOSS","LEARNING RATE","MOMENTUM","SHUFFLING",
-    "BATCH SIZE","EPOCHS","RESET|TEMPLATE"};
+    struct Box n_layers_button=input_boxes[0];
+    struct Box neurons_per_layer_button=input_boxes[1];
+    struct Box activation_button=input_boxes[2];
+    struct Box train_val_split_button=input_boxes[3];
+    struct Box n_train_test_button=input_boxes[4];
+    struct Box optimization_button=input_boxes[5];
+    struct Box loss_button=input_boxes[6];
+    struct Box learning_rate_button=input_boxes[7];
+    struct Box momentum_button=input_boxes[8];
+    struct Box shuffling_button=input_boxes[9];
+    struct Box batch_size_button=input_boxes[10];
+    struct Box epochs_button=input_boxes[11];
+    struct Box reset_template_button=input_boxes[12];
+    //printf("num_input_boxes=%d\n",num_input_boxes);
+
+    //int num_input_fields=12;
+    Boxes graphic_elements_2=initialize_training_input_fields(num_input_fields);
+    struct Box *input_fields=graphic_elements_2.boxes;
+
+    Boxes graphic_elements_3=initialize_training_training_boxes();
+    struct Box *training_boxes=graphic_elements_3.boxes;
+    int num_training_boxes=graphic_elements_3.num_boxes;
+    struct Box start_button=training_boxes[0];
+    struct Box stop_button=training_boxes[1];
+    struct Box plot_region=training_boxes[2];
+    struct Box results_region=training_boxes[3];
+    struct Box save_button=training_boxes[4];
+
+    //this defines the user interface that appears when i ask for input to the user
+    struct Box input_box = create_default_box();
+    init_input_box(&input_box);
 
     //When a button is pressed the cmd shows a prompt to insert the corresponding value
     //this stores the prompt
@@ -1069,107 +876,6 @@ void training_loop(){
         {128}
     };
 
-    //I define the display options of the input buttons
-    for (int i=0;i<num_input_boxes;i++){
-        if(i==num_input_boxes-1){
-            input_boxes[i].color=al_map_rgb(255, 0, 0);
-        }
-        else{
-            input_boxes[i].color=al_map_rgb(0, 255, 0);
-        }
-        int x=0,y=0,w,h;
-        place_object_grid(&x,&y,&w,&h,1,2*i+1,4,1,1/20.0, 1/(float)(num_input_boxes*2+1));
-        //printf("x=%d,y=%d,w=%d,h=%d\n",x,y,w,h);
-        input_boxes[i].x1=x;
-        if(i==num_input_boxes-1){
-            input_boxes[i].x2=x+w*2;
-        }
-        else{
-            input_boxes[i].x2=x+w;
-        }
-        input_boxes[i].y1=y;
-        input_boxes[i].y2=y+h;
-        strcpy(input_boxes[i].text,input_text[i]);
-    }
-    for (int i=0;i<num_input_fields;i++){
-        input_fields[i]=create_default_box();
-        input_fields[i].color=al_map_rgb(255, 255, 255);
-        int x=0,y=0,w,h;
-        place_object_grid(&x,&y,&w,&h,5,2*i+1,4,1,1/20.0, 1/(float)(num_input_boxes*2+1));
-        input_fields[i].x1=x;
-        input_fields[i].x2=x+w;
-        input_fields[i].y1=y;
-        input_fields[i].y2=y+h;
-        input_fields[i].text_color=al_map_rgb(0, 0, 0);
-    }
-
-    //i define the other buttons and display regions to be shown
-    struct Box start_button = create_default_box();
-    struct Box stop_button = create_default_box();
-    struct Box plot_region = create_default_box();
-    struct Box results_region = create_default_box();
-    struct Box save_button = create_default_box();
-    char training_text[5][25]={
-        "START","STOP","PLOT","RESULTS","SAVE"
-    };
-    int num_training_boxes=5;
-    int x,y,w,h;
-    float grid_size_x=1/10.0;
-    float grid_size_y=1/20.0;
-    //i define the start button
-    start_button.color=al_map_rgb(0, 255, 0);
-    place_object_grid(&x,&y,&w,&h,5,2,2,1,grid_size_x, grid_size_y);
-    start_button.x1=x;
-    start_button.x2=x+w;
-    start_button.y1=y;
-    start_button.y2=y+h;
-    //i define the stop button
-    stop_button.color=al_map_rgb(255, 0, 0);
-    place_object_grid(&x,&y,&w,&h,7,2,2,1,grid_size_x, grid_size_y);
-    stop_button.x1=x;
-    stop_button.x2=x+w;
-    stop_button.y1=y;
-    stop_button.y2=y+h;
-    //i define the plot region
-    plot_region.color=al_map_rgb(255, 255, 255);
-    place_object_grid(&x,&y,&w,&h,5,4,4,6,grid_size_x, grid_size_y);
-    plot_region.x1=x;
-    plot_region.x2=x+w;
-    plot_region.y1=y;
-    plot_region.y2=y+h;
-    //i define the results region
-    results_region.color=al_map_rgb(255, 255, 255);
-    place_object_grid(&x,&y,&w,&h,5,11,4,5,grid_size_x, grid_size_y);
-    results_region.x1=x;
-    results_region.x2=x+w;
-    results_region.y1=y;
-    results_region.y2=y+h;
-    //i define the save button
-    save_button.color=al_map_rgb(0, 255, 0);
-    place_object_grid(&x,&y,&w,&h,5,17,4,2,grid_size_x, grid_size_y);
-    save_button.x1=x;
-    save_button.x2=x+w;
-    save_button.y1=y;
-    save_button.y2=y+h;
-    struct Box training_boxes[5]={start_button,stop_button,plot_region,results_region,save_button};
-    //quando assegno in questo modo save_button, start_button etc non sono messi nell'array. Loro copie vengono
-    //messe nell'array (lo vedi perchè se l'inizializzazione dell'array è prima -> le coordinate sono sbagliate)
-    for (int i=0;i<num_training_boxes;i++){
-        strcpy(training_boxes[i].text,training_text[i]);
-        //printf("training boxes x1=%d,x2=%d,y1=%d,y2=%d\n",training_boxes[i].x1,training_boxes[i].x2,training_boxes[i].y1,training_boxes[i].y2);
-    }
-
-    //this defines the user interface that appears when i ask for input to the user
-    struct Box input_box = create_default_box();
-    input_box.color=al_map_rgb(255, 255, 255);
-    place_object_grid(&x,&y,&w,&h,1,1,8,8,1/10.0, 1/10.0);
-    input_box.x1=x;
-    input_box.x2=x+w;
-    input_box.y1=y;
-    input_box.y2=y+h;
-    input_box.text_color=al_map_rgb(0, 0, 0);
-    input_box.text_position=0;
-
     while(1){
         al_wait_for_event(queue, &event);
         switch(event.type)
@@ -1205,6 +911,9 @@ void training_loop(){
                                 p=x[0];
                                 for (int i=0;i<num_input_boxes-1;i++){
                                     parameters[i]=default_configs[p][i];
+                                }
+                                for (int i=0;i<parameters[0];i++){
+                                    layers[i]=default_n_layers[p][i];
                                 }
                             }
                             else{
@@ -1280,22 +989,6 @@ void training_loop(){
                         set_train_val((int)parameters[10], parameters[2]);
                         split_data();
                         weight_initialization();
-                        /*printf("number of epochs=%d\n",number_of_epochs);
-                        printf("number of training examples=%d\n",number_of_train_images);
-                        printf("number of validation examples=%d\n",number_of_val_images);
-                        printf("lr=%f\n",learning_rate);
-                        printf("momentum=%f\n",momentum);
-                        printf("batch size=%d\n",minibatch_size);
-                        printf("n_layers=%d\n",number_of_layers);
-                        for (int i=0;i<number_of_layers;i++){
-                            printf("neurons in layer %d=%d\n",i,neurons_per_layer[i]);
-                        }
-                        printf("activation function=%d\n",type_of_activation);
-                        printf("initialization=%d\n",type_of_initialization);
-                        printf("optimization=%d\n",type_of_optimization);
-                        printf("sample weight = %f\n",weights[0][0][0]);
-                        printf("shuffling = %d\n",type_of_shuffling);
-                        printf("loss function = %d\n",type_of_loss);*/
                     }
                 }
                 else if (is_point_inside_button(event.mouse.x, event.mouse.y, stop_button)) {
@@ -1311,27 +1004,13 @@ void training_loop(){
                 break;
             case ALLEGRO_EVENT_KEY_CHAR:
                 if(is_typing){
-                    if (event.keyboard.unichar >= 32 && event.keyboard.unichar <= 126) {
-                        if (strlen(typed_text) < sizeof(typed_text) - 1) {
-                            int len = strlen(typed_text);
-                            typed_text[len] = (char)event.keyboard.unichar;
-                            typed_text[len + 1] = '\0';
-                            redraw = true;
-                        }
-                    } else if (event.keyboard.keycode == ALLEGRO_KEY_BACKSPACE) {
-                        int len = strlen(typed_text);
-                        if (len > 0) {
-                            typed_text[len - 1] = '\0';
-                            redraw = true;
-                        }
-                    }
+                    get_keyboard_input();
                 }
                 break;
             case ALLEGRO_EVENT_DISPLAY_CLOSE:
                 done = true;
                 break;
         }
-
         if(done)
             break;
         //printf("%d",is_training);
@@ -1374,24 +1053,9 @@ void training_loop(){
             }
             al_clear_to_color(al_map_rgb(0, 0, 0));
             al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "TRAINING");
-            for (int i=0;i<num_input_boxes;i++){
-                al_draw_filled_rectangle(input_boxes[i].x1, input_boxes[i].y1, input_boxes[i].x2, input_boxes[i].y2, input_boxes[i].color);
-                float center_x=(input_boxes[i].x1+input_boxes[i].x2)/2;
-                float center_y=(input_boxes[i].y1+input_boxes[i].y2)/2;
-                al_draw_textf(font, input_boxes[i].text_color, center_x, center_y, input_boxes[i].text_position,"%s" , input_boxes[i].text);
-            }
-            for (int i=0;i<num_input_fields;i++){
-                al_draw_filled_rectangle(input_fields[i].x1, input_fields[i].y1, input_fields[i].x2, input_fields[i].y2, input_fields[i].color);
-                float center_x=(input_fields[i].x1+input_fields[i].x2)/2;
-                float center_y=(input_fields[i].y1+input_fields[i].y2)/2;
-                al_draw_textf(font, input_fields[i].text_color, center_x, center_y, input_fields[i].text_position,"%s" , input_fields[i].text);
-            }
-            for (int i=0;i<num_training_boxes;i++){
-                al_draw_filled_rectangle(training_boxes[i].x1, training_boxes[i].y1, training_boxes[i].x2, training_boxes[i].y2, training_boxes[i].color);
-                float center_x=(training_boxes[i].x1+training_boxes[i].x2)/2;
-                float center_y=(training_boxes[i].y1+training_boxes[i].y2)/2;
-                al_draw_textf(font, training_boxes[i].text_color, center_x, center_y, training_boxes[i].text_position, "%s" , training_boxes[i].text);
-            }
+            draw_box_elements(input_boxes,num_input_boxes);
+            draw_box_elements(input_fields,num_input_fields);
+            draw_box_elements(training_boxes,num_training_boxes);
             if(has_trained || is_training){
                 draw_plot(plot_region,loss_train,epochs,n_epochs,al_map_rgb(0, 0, 255));
                 draw_plot(plot_region,loss_val,epochs,n_epochs,al_map_rgb(255, 0, 0));
@@ -1402,12 +1066,9 @@ void training_loop(){
             if(is_typing){
                 show_typing_interface(input_box,text_to_show,typed_text);
             }
-            /*float test_input[100]={2.3,2.3,2.3,2.3};
-            float eee[100]={0,1,2,3,4};
-            draw_plot(plot_region,test_input,eee,2,al_map_rgb(0, 0, 255));
-            draw_plot(plot_region,test_input,eee,4,al_map_rgb(0, 0, 255));*/
             al_flip_display();
             redraw = false;
+            printf("is drawing\n");
         }
         if(is_training && al_is_event_queue_empty(queue)){
             redraw=true;
@@ -1697,4 +1358,371 @@ void show_typing_interface(struct Box input_box, char *text_to_show, char *typed
     draw_multiline_text(input_box.text_position,input_box.text_color, font_roboto, input_box.x1+spacing , input_box.y1+spacing,height_box/10.0, text_to_show);
     //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
     al_draw_textf(font_roboto, input_box.text_color, input_box.x1+spacing, input_box.y2-height_box/10.0, input_box.text_position, "%s" , typed_text);
+}
+
+void load_saved_model(int n_files,struct Box *box){
+    float result_input[1];
+    read_input(result_input, 0, n_files, 1,typed_text);
+    int i_file=(int)result_input[0];
+    //set_folder_name(".");
+    //printf("%d\n",i_file);
+    printf("Loading model %s\n",valid_names[i_file]);
+    sprintf(box -> text,"%s",valid_names[i_file]);//boxes[3] is the result box
+    //for the NN selection
+    load_model(valid_names[i_file]);
+    is_typing=false;
+    memset(typed_text, 0, sizeof(typed_text));
+    typed_text[0]='-';
+    typed_text[1]='>';
+    memset(text_to_show, 0, sizeof(text_to_show));
+    redraw=true;
+    //printf("1)%s \n", box.text);
+}
+
+void get_keyboard_input(){
+    if (event.keyboard.unichar >= 32 && event.keyboard.unichar <= 126) {
+        if (strlen(typed_text) < sizeof(typed_text) - 1) {
+            int len = strlen(typed_text);
+            typed_text[len] = (char)event.keyboard.unichar;
+            typed_text[len + 1] = '\0';
+            redraw = true;
+        }
+    } else if (event.keyboard.keycode == ALLEGRO_KEY_BACKSPACE) {
+        int len = strlen(typed_text);
+        if (len > 0) {
+            typed_text[len - 1] = '\0';
+            redraw = true;
+        }
+    }
+}
+
+void draw_box_elements(struct Box *boxes,int num_boxes){
+    for (int i=0;i<num_boxes;i++){
+        al_draw_filled_rectangle(boxes[i].x1, boxes[i].y1, boxes[i].x2, boxes[i].y2, boxes[i].color);
+        float center_x=(boxes[i].x1+boxes[i].x2)/2;
+        float center_y=(boxes[i].y1+boxes[i].y2)/2;
+        al_draw_textf(font, boxes[i].text_color, center_x, center_y, boxes[i].text_position, "%s" ,boxes[i].text);
+        //printf("%s\n" ,boxes[i].text);
+        //printf("%s\n" ,result_box.text);
+    }
+}
+
+void print_network_characteristics(){
+    printf("number of epochs=%d\n",number_of_epochs);
+    printf("number of training examples=%d\n",number_of_train_images);
+    printf("number of validation examples=%d\n",number_of_val_images);
+    printf("lr=%f\n",learning_rate);
+    printf("momentum=%f\n",momentum);
+    printf("batch size=%d\n",minibatch_size);
+    printf("n_layers=%d\n",number_of_layers);
+    for (int i=0;i<number_of_layers;i++){
+        printf("neurons in layer %d=%d\n",i,neurons_per_layer[i]);
+    }
+    printf("activation function=%d\n",type_of_activation);
+    printf("initialization=%d\n",type_of_initialization);
+    printf("optimization=%d\n",type_of_optimization);
+    printf("sample weight = %f\n",weights[0][0][0]);
+    printf("shuffling = %d\n",type_of_shuffling);
+    printf("loss function = %d\n",type_of_loss);
+}
+
+void init_input_box(struct Box *input_box){
+    input_box->color=al_map_rgb(255, 255, 255);
+    int x,y,w,h;
+    place_object_grid(&x,&y,&w,&h,1,1,8,8,1/10.0, 1/10.0);
+    input_box->x1=x;
+    input_box->x2=x+w;
+    input_box->y1=y;
+    input_box->y2=y+h;
+    input_box->text_color=al_map_rgb(0, 0, 0);
+    input_box->text_position=0;
+}
+
+Boxes initialize_testing_boxes(){
+    int x_blocks=width/6; //i divide in fifths and the buttons take the central fifth
+    int y_blocks=height/6; //the three boxes will go in 
+    int x_blocks_fine=width/12; //i divide in fifths and the buttons take the central fifth
+    int y_blocks_fine=height/12; //the three boxes will go in 
+    struct Box next_button = create_default_box();
+    struct Box submit_button = create_default_box();
+    struct Box NN_selection = create_default_box();
+    struct Box NN_selection_result = create_default_box();
+    struct Box start_test_box = create_default_box();
+    struct Box result_box = create_default_box();
+    struct Box showing_area = create_default_box();
+    struct Box test_results_area = create_default_box();
+    //i define the drawing region
+    showing_area.color=al_map_rgb(255, 255, 255);
+    showing_area.x1=x_blocks_fine*7;
+    showing_area.x2=x_blocks_fine*10;
+    showing_area.y1=y_blocks_fine;
+    showing_area.y2=y_blocks+showing_area.x2-showing_area.x1;
+    //I define the are where i will plot the results
+    test_results_area.color=al_map_rgb(255, 255, 255);
+    test_results_area.x1=x_blocks_fine*1;
+    test_results_area.x2=x_blocks_fine*5;
+    test_results_area.y1=y_blocks_fine*3;
+    test_results_area.y2=y_blocks_fine*11;
+    strcpy(test_results_area.text,"TEST RESULTS");
+    //i define the next button
+    next_button.color=al_map_rgba(0, 255, 0,0.6);
+    next_button.x1=x_blocks_fine*9;
+    next_button.x2=x_blocks_fine*10;
+    next_button.y1=showing_area.y2+y_blocks_fine;
+    next_button.y2=next_button.y1+y_blocks_fine;
+    strcpy(next_button.text,"NEXT");
+    //i define the submit button
+    submit_button.color=al_map_rgba(255, 0, 0,0.6);
+    submit_button.x1=x_blocks_fine*10;
+    submit_button.x2=x_blocks_fine*11;
+    submit_button.y1=showing_area.y2+y_blocks_fine;
+    submit_button.y2=next_button.y1+y_blocks_fine;
+    strcpy(submit_button.text,"SUBMIT");
+    //i define the selection button
+    NN_selection.color=al_map_rgba(0, 255, 0,1);
+    NN_selection.x1=test_results_area.x1;
+    NN_selection.x2=test_results_area.x1+2*x_blocks_fine;
+    NN_selection.y1=y_blocks_fine;
+    NN_selection.y2=y_blocks_fine*2;
+    NN_selection_result.text_color=al_map_rgb(0, 0, 0);
+    strcpy(NN_selection.text,"SELECT NN");
+    //i define the selection button
+    NN_selection_result.color=al_map_rgb(255, 255, 255);
+    NN_selection_result.x1=NN_selection.x2;
+    NN_selection_result.x2=NN_selection_result.x1+2*x_blocks_fine;
+    NN_selection_result.y1=y_blocks_fine;
+    NN_selection_result.y2=y_blocks_fine*2;
+    NN_selection_result.text_color=al_map_rgb(0, 0, 0);
+    strcpy(NN_selection_result.text," ");
+    //i define the button to start execution of test on test set
+    start_test_box.color=al_map_rgba(0, 255, 0,1);
+    start_test_box.x1=x_blocks_fine*6;
+    start_test_box.x2=submit_button.x2;
+    start_test_box.y1=next_button.y2+y_blocks_fine;
+    start_test_box.y2=start_test_box.y1+y_blocks_fine;
+    strcpy(start_test_box.text,"START TEST");
+    //i define the result region
+    result_box.color=al_map_rgb(255, 255, 255);
+    result_box.x1=x_blocks_fine*6;
+    result_box.x2=x_blocks_fine*8;
+    result_box.y1=showing_area.y2+y_blocks_fine;
+    result_box.y2=result_box.y1+y_blocks_fine;
+    result_box.text_position=2;//left aligned
+    result_box.text_color=al_map_rgb(0, 0, 0);
+    strcpy(result_box.text,"RESULT:");
+    int num_boxes=8;
+    struct Box boxes[MAX_BUTTONS]={next_button,submit_button,NN_selection,NN_selection_result,
+    start_test_box,result_box,showing_area,test_results_area};
+    Boxes result;
+    result.num_boxes=num_boxes;
+    for(int i=0;i<num_boxes;i++){
+        result.boxes[i]=boxes[i];
+    }
+    return result;
+}
+
+Boxes initialize_interactive_boxes(){
+    int x_blocks=width/6; //i divide in fifths and the buttons take the central fifth
+    int y_blocks=height/6; //the three boxes will go in 
+    int x_blocks_fine=width/12; //i divide in fifths and the buttons take the central fifth
+    int y_blocks_fine=height/12; //the three boxes will go in 
+    struct Box clear_button = create_default_box();
+    struct Box NN_selection = create_default_box();
+    struct Box NN_selection_result = create_default_box();
+    struct Box result_box = create_default_box();
+    struct Box drawing_area = create_default_box();
+    struct Box submit_button = create_default_box();
+    //i define the drawing region
+    drawing_area.color=al_map_rgb(255, 255, 255);
+    drawing_area.x1=x_blocks*2;
+    drawing_area.x2=x_blocks*4;
+    drawing_area.y1=y_blocks;
+    drawing_area.y2=y_blocks+drawing_area.x2-drawing_area.x1;
+    //i define the clear button
+    clear_button.color=al_map_rgba(0, 255, 0,0.6);
+    clear_button.x1=x_blocks_fine*9;
+    clear_button.x2=x_blocks_fine*10;
+    clear_button.y1=y_blocks_fine*4;
+    clear_button.y2=y_blocks_fine*5;
+    strcpy(clear_button.text,"CLEAR");
+    //i define the selection button
+    NN_selection.color=al_map_rgba(255, 255, 0,1);
+    NN_selection.x1=x_blocks_fine*9;
+    NN_selection.x2=x_blocks_fine*10;
+    NN_selection.y1=y_blocks_fine*6;
+    NN_selection.y2=y_blocks_fine*7;
+    NN_selection.text_color=al_map_rgb(0, 0, 0);
+    strcpy(NN_selection.text,"SELECT NN");
+    //i define the selection button
+    NN_selection_result.color=al_map_rgb(255, 255, 255);
+    NN_selection_result.x1=x_blocks_fine*10;
+    NN_selection_result.x2=x_blocks_fine*11;
+    NN_selection_result.y1=y_blocks_fine*6;
+    NN_selection_result.y2=y_blocks_fine*7;
+    NN_selection_result.text_color=al_map_rgb(0, 0, 0);
+    strcpy(NN_selection_result.text," ");
+    //i define the result region
+    result_box.color=al_map_rgb(255, 255, 255);
+    result_box.x1=x_blocks_fine*5;
+    result_box.x2=x_blocks_fine*7;
+    result_box.y1=drawing_area.y2+y_blocks_fine;
+    result_box.y2=result_box.y1+y_blocks_fine;
+    result_box.text_position=2;//left aligned
+    result_box.text_color=al_map_rgb(0, 0, 0);
+    strcpy(result_box.text,"RESULT:");
+    //i define the submit button
+    submit_button.color=al_map_rgb(255, 0, 0);
+    submit_button.x1=x_blocks_fine*10;
+    submit_button.x2=x_blocks_fine*11;
+    submit_button.y1=y_blocks_fine*4;
+    submit_button.y2=y_blocks_fine*5;
+    strcpy(submit_button.text,"SUBMIT");
+    int num_boxes=6;
+    struct Box boxes[MAX_BUTTONS]={clear_button,NN_selection,NN_selection_result,
+    result_box,drawing_area,submit_button};
+    Boxes result;
+    result.num_boxes=num_boxes;
+    for(int i=0;i<num_boxes;i++){
+        result.boxes[i]=boxes[i];
+    }
+    return result;
+}
+
+Boxes initialize_training_input_boxes(){
+    //i define the buttons needed to select the network structure
+    char input_text[13][25]={"N LAYERS","NEURONS PER LAYER","ACTIVATION","TRAIN VAL SPLIT",
+    "N TRAIN TEST","OPTIMIZATION","LOSS","LEARNING RATE","MOMENTUM","SHUFFLING",
+    "BATCH SIZE","EPOCHS","RESET|TEMPLATE"};
+    struct Box n_layers_button = create_default_box();
+    struct Box neurons_per_layer_button = create_default_box();
+    struct Box activation_button = create_default_box();
+    struct Box train_val_split_button = create_default_box();
+    struct Box n_train_test_button = create_default_box();
+    struct Box optimization_button = create_default_box();
+    struct Box loss_button = create_default_box();
+    struct Box learning_rate_button = create_default_box();
+    struct Box momentum_button = create_default_box();
+    struct Box shuffling_button = create_default_box();
+    struct Box batch_size_button = create_default_box();
+    struct Box epochs_button = create_default_box();
+    struct Box reset_template_button = create_default_box();
+    int num_input_boxes=13;
+    struct Box input_boxes[13]={n_layers_button,neurons_per_layer_button,
+    activation_button, train_val_split_button,n_train_test_button,optimization_button,
+    loss_button,learning_rate_button,momentum_button,shuffling_button,
+    batch_size_button,epochs_button, reset_template_button};
+
+    for (int i=0;i<num_input_boxes;i++){
+        if(i==num_input_boxes-1){
+            input_boxes[i].color=al_map_rgb(255, 0, 0);
+        }
+        else{
+            input_boxes[i].color=al_map_rgb(0, 255, 0);
+        }
+        int x=0,y=0,w,h;
+        place_object_grid(&x,&y,&w,&h,1,2*i+1,4,1,1/20.0, 1/(float)(num_input_boxes*2+1));
+        //printf("x=%d,y=%d,w=%d,h=%d\n",x,y,w,h);
+        input_boxes[i].x1=x;
+        if(i==num_input_boxes-1){
+            input_boxes[i].x2=x+w*2;
+        }
+        else{
+            input_boxes[i].x2=x+w;
+        }
+        input_boxes[i].y1=y;
+        input_boxes[i].y2=y+h;
+        strcpy(input_boxes[i].text,input_text[i]);
+    }
+    Boxes result;
+    result.num_boxes=num_input_boxes;
+    for(int i=0;i<num_input_boxes;i++){
+        result.boxes[i]=input_boxes[i];
+    }
+    return result;
+}
+
+Boxes initialize_training_input_fields(int num_input_fields){
+    struct Box input_fields[MAX_BUTTONS];
+    //I define the display options of the input buttons
+    for (int i=0;i<num_input_fields;i++){
+        input_fields[i]=create_default_box();
+        input_fields[i].color=al_map_rgb(255, 255, 255);
+        int x=0,y=0,w,h;
+        place_object_grid(&x,&y,&w,&h,5,2*i+1,4,1,1/20.0, 1/(float)((num_input_fields+1)*2+1));
+        input_fields[i].x1=x;
+        input_fields[i].x2=x+w;
+        input_fields[i].y1=y;
+        input_fields[i].y2=y+h;
+        input_fields[i].text_color=al_map_rgb(0, 0, 0);
+    }
+    Boxes result;
+    result.num_boxes=num_input_fields;
+    for(int i=0;i<num_input_fields;i++){
+        result.boxes[i]=input_fields[i];
+    }
+    return result;
+}
+
+Boxes initialize_training_training_boxes(){
+    //i define the other buttons and display regions to be shown
+    struct Box start_button = create_default_box();
+    struct Box stop_button = create_default_box();
+    struct Box plot_region = create_default_box();
+    struct Box results_region = create_default_box();
+    struct Box save_button = create_default_box();
+    char training_text[5][25]={
+        "START","STOP","PLOT","RESULTS","SAVE"
+    };
+    int num_training_boxes=5;
+    int x,y,w,h;
+    float grid_size_x=1/10.0;
+    float grid_size_y=1/20.0;
+    //i define the start button
+    start_button.color=al_map_rgb(0, 255, 0);
+    place_object_grid(&x,&y,&w,&h,5,2,2,1,grid_size_x, grid_size_y);
+    start_button.x1=x;
+    start_button.x2=x+w;
+    start_button.y1=y;
+    start_button.y2=y+h;
+    //i define the stop button
+    stop_button.color=al_map_rgb(255, 0, 0);
+    place_object_grid(&x,&y,&w,&h,7,2,2,1,grid_size_x, grid_size_y);
+    stop_button.x1=x;
+    stop_button.x2=x+w;
+    stop_button.y1=y;
+    stop_button.y2=y+h;
+    //i define the plot region
+    plot_region.color=al_map_rgb(255, 255, 255);
+    place_object_grid(&x,&y,&w,&h,5,4,4,6,grid_size_x, grid_size_y);
+    plot_region.x1=x;
+    plot_region.x2=x+w;
+    plot_region.y1=y;
+    plot_region.y2=y+h;
+    //i define the results region
+    results_region.color=al_map_rgb(255, 255, 255);
+    place_object_grid(&x,&y,&w,&h,5,11,4,5,grid_size_x, grid_size_y);
+    results_region.x1=x;
+    results_region.x2=x+w;
+    results_region.y1=y;
+    results_region.y2=y+h;
+    //i define the save button
+    save_button.color=al_map_rgb(0, 255, 0);
+    place_object_grid(&x,&y,&w,&h,5,17,4,2,grid_size_x, grid_size_y);
+    save_button.x1=x;
+    save_button.x2=x+w;
+    save_button.y1=y;
+    save_button.y2=y+h;
+    struct Box training_boxes[5]={start_button,stop_button,plot_region,results_region,save_button};
+    //quando assegno in questo modo save_button, start_button etc non sono messi nell'array. Loro copie vengono
+    //messe nell'array (lo vedi perchè se l'inizializzazione dell'array è prima -> le coordinate sono sbagliate)
+    for (int i=0;i<num_training_boxes;i++){
+        strcpy(training_boxes[i].text,training_text[i]);
+        //printf("training boxes x1=%d,x2=%d,y1=%d,y2=%d\n",training_boxes[i].x1,training_boxes[i].x2,training_boxes[i].y1,training_boxes[i].y2);
+    }
+    Boxes result;
+    result.num_boxes=num_training_boxes;
+    for(int i=0;i<num_training_boxes;i++){
+        result.boxes[i]=training_boxes[i];
+    }
+    return result;
 }
