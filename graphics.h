@@ -53,6 +53,14 @@ struct Box{
     int text_position;
     ALLEGRO_COLOR text_color;
 };
+bool drawing = false; // Flag to track whether we are currently drawing
+bool inference = false;
+bool is_typing=false;
+char typed_text[1000]={"->"};
+char text_to_show[1000];
+float last_x = 0, last_y = 0; // Keep track of the last position
+
+char valid_names[100][MAX_FILE_NAME_LENGTH];
 
 void display_training_interface();
 void display_testing_interface();
@@ -281,6 +289,16 @@ void generic_initialization()
     memset(key, 0, sizeof(key));//inititalize all elements of the array to 0
 
     al_start_timer(timer);
+
+    drawing = false; // Flag to track whether we are currently drawing
+    inference = false;
+    is_typing=false;
+    typed_text[1000]={"->"};
+    text_to_show[1000];
+    last_x = 0, last_y = 0; // Keep track of the last position
+
+    valid_names[100][MAX_FILE_NAME_LENGTH];
+
 }
 
 void destroy_graphics()
@@ -397,6 +415,7 @@ void interactive_mode_initialization(){
 
 void drawing_function(int x, int y, int drawing_x,int drawing_y, int r,int dim,int **drawing_matrix){
     al_draw_filled_rectangle(x-r, y-r, x+r, y+r, al_map_rgb(0, 0, 0));
+    //al_draw_filled_circle(x, y,r, al_map_rgb(0, 0, 0));
     int x_new=x-drawing_x;
     int y_new=y-drawing_y;//x and y in the reference frame of the drawing area
     //consider that in matrices you have i=row and j=column while for pixels is opposite
@@ -425,14 +444,7 @@ void draw_matrix(int **drawing_matrix, int drawing_x,int drawing_y,int dim){
 //a window where i can select the network to use
 void interactive_loop(){
     interactive_mode_initialization();
-    bool drawing = false; // Flag to track whether we are currently drawing
-    bool inference = false;
-    bool is_typing=false;
-    char typed_text[1000]={"->"};
-    char text_to_show[1000];
-    float last_x = 0, last_y = 0; // Keep track of the last position
-
-    char valid_names[100][MAX_FILE_NAME_LENGTH];
+    
     int n_files=read_filenames_from_directory(valid_names);
     /*for(int i=0;i<n_files;i++){
         printf("%s\n",valid_names[i]);
@@ -626,10 +638,12 @@ void interactive_loop(){
 
         if(done)
             break;
-        if(drawing && al_is_event_queue_empty(queue)){
+        if(drawing){
             //printf("drawing\n");
             drawing_function(last_x,last_y, drawing_area.x1,drawing_area.y1, 
             10, dim_drawing, drawing_matrix);//fill drawing matrix
+        }
+        if(drawing && al_is_event_queue_empty(queue)){
             al_flip_display();
         }
         if(redraw && al_is_event_queue_empty(queue)){
@@ -1475,19 +1489,19 @@ int process_drawing_region(int dim, int **drawing_matrix){
     //prendo ogni pixel nell'immagine di arrivo. Calcolo la posizione del corrispondente
     //pixel nell'immagine di partenza. Faccio la media dei pixel in un intorno di quello di partenenza
     //o prendo il massimo
-    int l_sup=5;//-> considero un qudrato di lato 5 attorno al pixel di arrivo per fare la media
+    int l_sup=3;//-> considero un qudrato di lato 5 attorno al pixel di arrivo per fare la media
     for(int i=0;i<28;i++){
         for(int j=0;j<28;j++){
             image[i][j]=0;
             int i_sup=(int)((float)i/28.0*(float)n);
             int j_sup=(int)((float)j/28.0*(float)n);
-            for(int k=i_sup-l_sup;k<i_sup+l_sup;k++){
-                for(int l=j_sup-l_sup;l<j_sup+l_sup;l++){
+            for(int k=i_sup-l_sup;k<i_sup+l_sup+1;k++){
+                for(int l=j_sup-l_sup;l<j_sup+l_sup+1;l++){
                     if(k>=0 && k<n && l>=0 && l<n){
                         /*if(drawing_matrix[k][l]>image[i][j]){//i take the max value
                             image[i][j]=drawing_matrix[k][l];
                         }*/
-                        image[i][j]+=(int)((float)(drawing_matrix[k][l]/(l_sup*l_sup+1))); //i take the average
+                        image[i][j]+=(int)((float)(drawing_matrix[k][l]/(float)((2*l_sup+1)*(2*l_sup+1)))); //i take the average
                     }
                 }
             }
@@ -1495,7 +1509,8 @@ int process_drawing_region(int dim, int **drawing_matrix){
     }
     forward_propagation(image);
     int guess=get_best_class(outputs[number_of_layers-1]);
-    print_image(image);
+    //print_image(image);
+    //print_image(testing_images[0]);
     return guess;
 }
 

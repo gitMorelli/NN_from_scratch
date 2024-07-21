@@ -205,10 +205,11 @@ void print_image(int image[input_size][input_size]){
     for (int i = 0; i <input_size; i++) {
         for (int j=0;j<input_size;j++){
             if(image[i][j]>0){
-                printf("x");
+                //printf("x");
+                printf("%d ",image[i][j]);
             }
             else{
-                printf(" ");
+                printf("   ");
             }
         }
         printf("\n");

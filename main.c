@@ -21,6 +21,8 @@ int main(int argc, char *argv[])
     set_folder_name(main_folder);*/
     unsigned int seed = 1234; // Example fixed seed
     srand(seed);
+    set_number_of_inputs(10000,10000);
+    load_test_set();
     menu_loop();
 
     return 0;
