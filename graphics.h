@@ -27,6 +27,9 @@ static ALLEGRO_EVENT_QUEUE* queue;
 static ALLEGRO_DISPLAY* disp;
 static ALLEGRO_FONT* font;
 static ALLEGRO_FONT* font_roboto;
+static ALLEGRO_FONT* font_roboto_medium;
+static ALLEGRO_FONT* font_roboto_small;
+static ALLEGRO_FONT* font_roboto_very_small;
 static ALLEGRO_FONT* small_font;
 static bool done;
 static bool redraw;
@@ -67,7 +70,7 @@ char text_to_show[1000];
 char valid_names[100][MAX_FILE_NAME_LENGTH];
 char result_string[100];
 
-
+int count_char_occurrences(const char *str, char target);
 void display_training_interface();
 void display_testing_interface();
 void must_init(bool test, const char *description);
@@ -179,6 +182,17 @@ void draw_multiline_text(int text_position,ALLEGRO_COLOR color,ALLEGRO_FONT *fon
     }
 }
 
+int count_char_occurrences(const char *str, char target) {
+    int count = 0;
+    while (*str) {
+        if (*str == target) {
+            count++;
+        }
+        str++;
+    }
+    return count;
+}
+
 int read_input(float *x, float min, float max, int dim,char *text){
     int count=0;
     char text_copy[1000];
@@ -288,6 +302,15 @@ void generic_initialization()
     // Load a TTF font with a specific size
     font_roboto = al_load_ttf_font("fonts/roboto-font/RobotoRegular-3m4L.ttf", 36, 0); // Example size 36
     must_init(font_roboto, "font");
+
+    font_roboto_medium = al_load_ttf_font("fonts/roboto-font/RobotoRegular-3m4L.ttf", 26, 0); // Example size 36
+    must_init(font_roboto_medium, "font");
+
+    font_roboto_small = al_load_ttf_font("fonts/roboto-font/RobotoRegular-3m4L.ttf", 16, 0); // Example size 36
+    must_init(font_roboto_small, "font");
+
+    font_roboto_very_small = al_load_ttf_font("fonts/roboto-font/RobotoRegular-3m4L.ttf", 6, 0); // Example size 36
+    must_init(font_roboto_very_small, "font");
 
     must_init(al_init_primitives_addon(), "primitives");
 
@@ -435,6 +458,21 @@ void drawing_function(int x, int y, int drawing_x,int drawing_y, int r,int dim,i
     }
 }
 
+/*void drawing_function_2(int x, int y, int drawing_x,int drawing_y, int r,int dim,int **drawing_matrix){
+    int x_new=x-drawing_x;
+    int y_new=y-drawing_y;//x and y in the reference frame of the drawing area
+    float dx=dim/28.0;
+    float dy=dim/28.0;
+    //printf("%f \n",dx);
+    //fflush(stdout);
+    //consider that in matrices you have i=row and j=column while for pixels is opposite
+    int i=round(y_new/dy);
+    int j=round(x_new/dx);
+    //drawing_matrix[i][j]=255;
+    al_draw_filled_rectangle(j*dx+drawing_x, i*dy+drawing_y, (j+1)*dx+drawing_x, 
+    (i+1)*dy+drawing_y, al_map_rgb(0, 0, 0));
+}*/
+
 void draw_matrix(int **drawing_matrix, int drawing_x,int drawing_y,int dim){
     for(int i=0;i<dim;i++){
         for(int j=0;j<dim;j++){
@@ -527,6 +565,9 @@ void interactive_loop(){
                     is_typing=true;
                     char temporary[10000]="Insert the number of the file in the list \n (first is 0) to load the neural network:\n";
                     for(int i=0;i<n_files;i++){
+                        char formatting[100];
+                        sprintf(formatting,"%d) ",i);
+                        strcat(temporary,formatting);
                         strcat(temporary,valid_names[i]);
                         strcat(temporary,"\n");
                     }
@@ -566,6 +607,8 @@ void interactive_loop(){
             //printf("drawing\n");
             drawing_function(last_x,last_y, drawing_area.x1,drawing_area.y1, 
             10, dim_drawing, drawing_matrix);//fill drawing matrix
+            //drawing_function_2(last_x,last_y, drawing_area.x1,drawing_area.y1, 
+            //10, dim_drawing, drawing_matrix);//fill drawing matrix
         }
         if(drawing && al_is_event_queue_empty(queue)){
             al_flip_display();
@@ -673,6 +716,9 @@ void testing_loop(){
                     is_typing=true;
                     char temporary[10000]="Insert the number of the file in the list \n (first is 0) to load the neural network:\n";
                     for(int i=0;i<n_files;i++){
+                        char formatting[100];
+                        sprintf(formatting,"%d) ",i);
+                        strcat(temporary,formatting);
                         strcat(temporary,valid_names[i]);
                         strcat(temporary,"\n");
                     }
@@ -808,7 +854,7 @@ void training_loop(){
     "Insert the number of neurons per layer\n using the format n1 n2 n3 .. nk for k layers\n",
     "Insert the activation function\n 0=sigmoid\n 1=ReLu\n",
     "Determine the fraction of the training set to use for validation\n",
-    "Determine the number of training (max 60000) and test examples (max 10000). Write: n_train n_test\n",
+    "Determine the number of training (max 60000)\n and test examples (max 10000).\n Write: n_train n_test\n",
     "Choose the optimization algorithm\n 0=SGD\n 1=SGD with momentum\n 2=Nesterov\n",
     "Choose the loss function\n 0=Cross entropy(log likelihood)\n 1=MSE\n",
     "Insert the learning rate\n",
@@ -941,7 +987,11 @@ void training_loop(){
                             result_string[j-2]=typed_text[j];
                         }
                         //set_folder_name(".");
+                        int temporary_epochs=number_of_epochs;//in this way i save the epoch at which i stopped
+                        //instead of number_of_epochs hyperparameter
+                        number_of_epochs=n_epochs;
                         save_NN(result_string);
+                        number_of_epochs=temporary_epochs;
                         is_saveing=false;
                         is_typing=false;
                         memset(typed_text, 0, sizeof(typed_text));
@@ -975,6 +1025,16 @@ void training_loop(){
                     }
                     if (is_point_inside_button(event.mouse.x, event.mouse.y, start_button)) {
                         is_training=true;
+                        has_trained=false;
+                        x_lim_sup=10;
+                        y_lim_sup=-1;
+                        x_lim_inf=0;
+                        y_lim_inf=0;
+                        x_pos_sup=-1;
+                        y_pos_sup=-1;
+                        x_pos_inf=-1;
+                        y_pos_inf=-1;
+                        n_epochs=0;
                         //printf("is_training=%d\n",is_training);
                         redraw = true;
                         //i set the neural network structure
@@ -992,7 +1052,6 @@ void training_loop(){
                     }
                 }
                 else if (is_point_inside_button(event.mouse.x, event.mouse.y, stop_button)) {
-                    is_training=false;
                     has_trained=true;
                 }
                 break;
@@ -1013,6 +1072,13 @@ void training_loop(){
         }
         if(done)
             break;
+        if(has_trained && is_training){
+            is_training=false;
+            float probabilities[number_of_test_images][10];
+            inference_on_set(testing_images,probabilities, number_of_test_images);
+            resulting_metrics=compute_metrics(probabilities,testing_labels, number_of_test_images);
+            error_on_validation=resulting_metrics.overall_accuracy;
+        }
         //printf("%d",is_training);
         if(redraw && al_is_event_queue_empty(queue)){
             if(!is_training){
@@ -1068,7 +1134,7 @@ void training_loop(){
             }
             al_flip_display();
             redraw = false;
-            printf("is drawing\n");
+            //printf("is drawing\n");
         }
         if(is_training && al_is_event_queue_empty(queue)){
             redraw=true;
@@ -1082,12 +1148,7 @@ void training_loop(){
             loss_val[n_epochs]=loss_on_set(validation_labels,probabilities,number_of_val_images,type_of_loss);
             n_epochs++;
             if(n_epochs>=number_of_epochs){
-                is_training=false;
                 has_trained=true;
-                float p_test[number_of_val_images][10];
-                inference_on_set(validation_images,p_test, number_of_val_images);
-                resulting_metrics=compute_metrics(probabilities,validation_labels, number_of_val_images);
-
             }
             printf("loss on validation set=%f\n",loss_val[n_epochs-1]);
             fflush(stdout);
@@ -1355,7 +1416,21 @@ void show_typing_interface(struct Box input_box, char *text_to_show, char *typed
     float height_box=input_box.y2-input_box.y1;
     float spacing=height_box/10.0;
     //printf("text to show=%s\n",text_to_show);
-    draw_multiline_text(input_box.text_position,input_box.text_color, font_roboto, input_box.x1+spacing , input_box.y1+spacing,height_box/10.0, text_to_show);
+    int n_lines=1;
+    n_lines=count_char_occurrences(text_to_show,'\n')+1;
+    static ALLEGRO_FONT* current_font;
+    if(n_lines<5){
+        current_font=font_roboto;
+    }
+    else if(n_lines<10){
+        current_font=font_roboto_small;
+        spacing=height_box/20.0;
+    }
+    else{
+        current_font=font_roboto_very_small;
+        spacing=height_box/30.0;
+    }
+    draw_multiline_text(input_box.text_position,input_box.text_color, current_font, input_box.x1+spacing , input_box.y1+spacing,spacing , text_to_show);
     //al_draw_textf(font, input_box.text_color, input_box.x1+10 , input_box.y1, input_box.text_position, "%s" , text_to_show);
     al_draw_textf(font_roboto, input_box.text_color, input_box.x1+spacing, input_box.y2-height_box/10.0, input_box.text_position, "%s" , typed_text);
 }
@@ -1409,7 +1484,8 @@ void draw_box_elements(struct Box *boxes,int num_boxes){
 }
 
 void print_network_characteristics(){
-    printf("Network characteristics \n");
+    printf("Network characteristics: \n");
+    printf("\n");
     printf("number of epochs=%d\n",number_of_epochs);
     printf("number of training examples=%d\n",number_of_train_images);
     printf("number of validation examples=%d\n",number_of_val_images);
@@ -1426,6 +1502,8 @@ void print_network_characteristics(){
     printf("sample weight = %f\n",weights[0][0][0]);
     printf("shuffling = %d\n",type_of_shuffling);
     printf("loss function = %d\n",type_of_loss);
+    printf("Error on validation set=%f\n",error_on_validation);
+    printf("\n");
 }
 
 void init_input_box(struct Box *input_box){
@@ -1483,17 +1561,17 @@ Boxes initialize_testing_boxes(){
     //i define the selection button
     NN_selection.color=al_map_rgba(0, 255, 0,1);
     NN_selection.x1=test_results_area.x1;
-    NN_selection.x2=test_results_area.x1+2*x_blocks_fine;
-    NN_selection.y1=y_blocks_fine;
-    NN_selection.y2=y_blocks_fine*2;
+    NN_selection.x2=test_results_area.x1+4*x_blocks_fine;
+    NN_selection.y1=y_blocks_fine*0.5;
+    NN_selection.y2=y_blocks_fine*1.5;
     NN_selection_result.text_color=al_map_rgb(0, 0, 0);
     strcpy(NN_selection.text,"SELECT NN");
     //i define the selection button
     NN_selection_result.color=al_map_rgb(255, 255, 255);
-    NN_selection_result.x1=NN_selection.x2;
-    NN_selection_result.x2=NN_selection_result.x1+2*x_blocks_fine;
-    NN_selection_result.y1=y_blocks_fine;
-    NN_selection_result.y2=y_blocks_fine*2;
+    NN_selection_result.x1=NN_selection.x1;
+    NN_selection_result.x2=NN_selection_result.x1+4*x_blocks_fine;
+    NN_selection_result.y1=y_blocks_fine*1.5;
+    NN_selection_result.y2=y_blocks_fine*2.5;
     NN_selection_result.text_color=al_map_rgb(0, 0, 0);
     strcpy(NN_selection_result.text," ");
     //i define the button to start execution of test on test set
@@ -1536,37 +1614,37 @@ Boxes initialize_interactive_boxes(){
     struct Box submit_button = create_default_box();
     //i define the drawing region
     drawing_area.color=al_map_rgb(255, 255, 255);
-    drawing_area.x1=x_blocks*2;
-    drawing_area.x2=x_blocks*4;
+    drawing_area.x1=x_blocks*1;
+    drawing_area.x2=x_blocks*3;
     drawing_area.y1=y_blocks;
     drawing_area.y2=y_blocks+drawing_area.x2-drawing_area.x1;
     //i define the clear button
     clear_button.color=al_map_rgba(0, 255, 0,0.6);
-    clear_button.x1=x_blocks_fine*9;
-    clear_button.x2=x_blocks_fine*10;
+    clear_button.x1=x_blocks_fine*7;
+    clear_button.x2=x_blocks_fine*9;
     clear_button.y1=y_blocks_fine*4;
     clear_button.y2=y_blocks_fine*5;
     strcpy(clear_button.text,"CLEAR");
     //i define the selection button
     NN_selection.color=al_map_rgba(255, 255, 0,1);
-    NN_selection.x1=x_blocks_fine*9;
-    NN_selection.x2=x_blocks_fine*10;
+    NN_selection.x1=x_blocks_fine*7;
+    NN_selection.x2=x_blocks_fine*11;
     NN_selection.y1=y_blocks_fine*6;
     NN_selection.y2=y_blocks_fine*7;
     NN_selection.text_color=al_map_rgb(0, 0, 0);
     strcpy(NN_selection.text,"SELECT NN");
     //i define the selection button
     NN_selection_result.color=al_map_rgb(255, 255, 255);
-    NN_selection_result.x1=x_blocks_fine*10;
+    NN_selection_result.x1=x_blocks_fine*7;
     NN_selection_result.x2=x_blocks_fine*11;
-    NN_selection_result.y1=y_blocks_fine*6;
-    NN_selection_result.y2=y_blocks_fine*7;
+    NN_selection_result.y1=y_blocks_fine*7;
+    NN_selection_result.y2=y_blocks_fine*8;
     NN_selection_result.text_color=al_map_rgb(0, 0, 0);
     strcpy(NN_selection_result.text," ");
     //i define the result region
     result_box.color=al_map_rgb(255, 255, 255);
-    result_box.x1=x_blocks_fine*5;
-    result_box.x2=x_blocks_fine*7;
+    result_box.x1=x_blocks_fine*3;
+    result_box.x2=x_blocks_fine*5;
     result_box.y1=drawing_area.y2+y_blocks_fine;
     result_box.y2=result_box.y1+y_blocks_fine;
     result_box.text_position=2;//left aligned
@@ -1574,7 +1652,7 @@ Boxes initialize_interactive_boxes(){
     strcpy(result_box.text,"RESULT:");
     //i define the submit button
     submit_button.color=al_map_rgb(255, 0, 0);
-    submit_button.x1=x_blocks_fine*10;
+    submit_button.x1=x_blocks_fine*9;
     submit_button.x2=x_blocks_fine*11;
     submit_button.y1=y_blocks_fine*4;
     submit_button.y2=y_blocks_fine*5;
