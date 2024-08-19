@@ -1057,6 +1057,20 @@ void save_NN(char *filename) {
         }
         fprintf(file, "\n");
     }
+    //Save training data
+    fprintf(file, "%d\n", type_of_activation);//activation function
+    fprintf(file, "%d\n", type_of_initialization);//initialization function
+    fprintf(file, "%d\n", type_of_loss);//loss function
+    fprintf(file, "%d\n", type_of_optimization);//optimization function
+    fprintf(file, "%d\n", type_of_shuffling);//shuffling function
+    fprintf(file, "%d\n", number_of_epochs);//number of epochs
+    fprintf(file, "%f\n", learning_rate);//learning rate
+    fprintf(file, "%f\n", threshold_error);//threshold error
+    fprintf(file, "%f\n", momentum);//momentum
+    fprintf(file, "%f\n", minibatch_size);
+    fprintf(file, "%f\n", number_of_val_images);
+    fprintf(file, "%f\n", number_of_train_images);
+    fprintf(file, "%f\n", train_val_split);
 
     fclose(file);
 }
@@ -1100,5 +1114,19 @@ void load_model(char *filename)
         }
     }
 
+    fscanf(file, "%d", &type_of_activation);//activation function
+    fscanf(file, "%d", &type_of_initialization);//initialization function
+    fscanf(file, "%d", &type_of_loss);//loss function
+    fscanf(file, "%d", &type_of_optimization);//optimization function
+    fscanf(file, "%d", &type_of_shuffling);//shuffling function
+    fscanf(file, "%d", &number_of_epochs);//number of epochs
+    fscanf(file, "%f", &learning_rate);//learning rate
+    fscanf(file, "%f", &threshold_error);//threshold error
+    fscanf(file, "%f", &momentum);//momentum
+    fscanf(file, "%f", &minibatch_size);
+    fscanf(file, "%f", &number_of_val_images);
+    fscanf(file, "%f", &number_of_train_images);
+    fscanf(file, "%f", &train_val_split);
+    
     fclose(file);
 }

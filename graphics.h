@@ -1370,6 +1370,7 @@ void load_saved_model(int n_files,struct Box *box){
     sprintf(box -> text,"%s",valid_names[i_file]);//boxes[3] is the result box
     //for the NN selection
     load_model(valid_names[i_file]);
+    print_network_characteristics();
     is_typing=false;
     memset(typed_text, 0, sizeof(typed_text));
     typed_text[0]='-';
@@ -1408,6 +1409,7 @@ void draw_box_elements(struct Box *boxes,int num_boxes){
 }
 
 void print_network_characteristics(){
+    printf("Network characteristics \n");
     printf("number of epochs=%d\n",number_of_epochs);
     printf("number of training examples=%d\n",number_of_train_images);
     printf("number of validation examples=%d\n",number_of_val_images);
