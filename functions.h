@@ -61,6 +61,8 @@ static float threshold_error;
 static float error_on_batch;
 static float error_on_epoch;
 static float error_on_validation;
+static float norm=0;//0 for normalization, 1 for binarization
+
 typedef struct {
     //in confusion matrices i have gold as columns and predicted as rows   
     //in micro confusion matrices i have 1 as first and 0 as second
@@ -106,6 +108,7 @@ void neuron_output(int neuron_index, int layer_index, float *input, int activ_fu
 void forward_propagation(int input[input_size][input_size]);
 float *lin_and_norm(int x[input_size][input_size]);
 float *lin_and_bin(int x[input_size][input_size]);
+float *preprocess_image(int x[input_size][input_size]);
 void learn_example(int input_index);
 void reset_dw_db();
 void reset_momentum();
@@ -606,6 +609,16 @@ float *lin_and_bin(int x[input_size][input_size]){
     }
     return y;
 }
+
+float *preprocess_image(int x[input_size][input_size])
+{
+    //preprocess the image
+    //return the linearized image
+    if (norm==0)
+        return lin_and_norm(x);
+    else
+        return lin_and_bin(x);
+}
 //-----------------------
 //inference
 void neuron_output(int neuron_index, int layer_index, float *input, int activ_function)
@@ -648,7 +661,7 @@ void layer_output(float *input, int layer_index, int activ_function)
 //i use this function only for inference. During training is called by learn_example
 void forward_propagation(int input[input_size][input_size])
 {
-    float *input_linear = lin_and_norm(input);
+    float *input_linear=preprocess_image(input);
     for (int i=0;i<number_of_layers;i++)
     {
         if (i==0){
@@ -679,7 +692,7 @@ void learn_example(int index_of_example)
 {
     forward_propagation(training_images[index_of_example]);
     error_on_batch += loss_on_example(training_labels[index_of_example],outputs[number_of_layers-1],type_of_loss);
-    float *input_linear = lin_and_norm(training_images[index_of_example]);
+    float *input_linear = preprocess_image(training_images[index_of_example]);
     float deltas[number_of_layers][max_neurons_per_layer];
     for (int l=number_of_layers-1; l>=0; l--)//i start from the last layer 
     {
