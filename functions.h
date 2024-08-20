@@ -708,7 +708,7 @@ void learn_example(int index_of_example)
                 case 1: //Relu
                     activ_derivative = ReLU_derivative(activations[l][i]);
                     break;
-                default: // log likelihood
+                default: 
                     activ_derivative = sigmoid_derivative(activations[l][i]);
                     break;
                 }
@@ -759,14 +759,17 @@ float optimizer_w(float delta, float input, float dw_p){
     }
 }
 
-float optimizer_b(float delta, float db_prev){
+float optimizer_b(float delta, float db_p){
     switch (type_of_optimization)
     {
     case 0://sgd
         return learning_rate*delta;
         break;
     case 1:
-        return learning_rate*delta+momentum*db_prev;
+        return learning_rate*delta+momentum*db_p;
+        break;
+    case 2:
+        return learning_rate*delta+momentum*db_p;
         break;
     default: //sgd
         return learning_rate*delta;

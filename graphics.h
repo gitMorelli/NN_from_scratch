@@ -309,7 +309,7 @@ void generic_initialization()
     font_roboto_small = al_load_ttf_font("fonts/roboto-font/RobotoRegular-3m4L.ttf", 16, 0); // Example size 36
     must_init(font_roboto_small, "font");
 
-    font_roboto_very_small = al_load_ttf_font("fonts/roboto-font/RobotoRegular-3m4L.ttf", 6, 0); // Example size 36
+    font_roboto_very_small = al_load_ttf_font("fonts/roboto-font/RobotoRegular-3m4L.ttf", 12, 0); // Example size 36
     must_init(font_roboto_very_small, "font");
 
     must_init(al_init_primitives_addon(), "primitives");
@@ -606,7 +606,7 @@ void interactive_loop(){
         if(drawing){
             //printf("drawing\n");
             drawing_function(last_x,last_y, drawing_area.x1,drawing_area.y1, 
-            10, dim_drawing, drawing_matrix);//fill drawing matrix
+            12, dim_drawing, drawing_matrix);//fill drawing matrix
             //drawing_function_2(last_x,last_y, drawing_area.x1,drawing_area.y1, 
             //10, dim_drawing, drawing_matrix);//fill drawing matrix
         }
@@ -1211,7 +1211,7 @@ int process_drawing_region(int dim, int **drawing_matrix){
     //prendo ogni pixel nell'immagine di arrivo. Calcolo la posizione del corrispondente
     //pixel nell'immagine di partenza. Faccio la media dei pixel in un intorno di quello di partenenza
     //o prendo il massimo
-    int l_sup=3;//-> considero un qudrato di lato 5 attorno al pixel di arrivo per fare la media
+    int l_sup=2;//-> considero un qudrato di lato 5 attorno al pixel di arrivo per fare la media
     for(int i=0;i<28;i++){
         for(int j=0;j<28;j++){
             image[i][j]=0;
