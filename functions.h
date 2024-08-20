@@ -35,8 +35,8 @@ static float activations[max_hidden_layers+1][max_neurons_per_layer];
 static float outputs[max_hidden_layers+1][max_neurons_per_layer];
 static float dw[max_hidden_layers+1][max_neurons_per_layer][max_neurons_per_layer]; //weight variation for each layer
 static float db[max_hidden_layers+1][max_neurons_per_layer]; //bias variation for each layer
-static float dw_prev[max_hidden_layers+1][max_neurons_per_layer][max_neurons_per_layer]; //weight variation for each layer
-static float db_prev[max_hidden_layers+1][max_neurons_per_layer]; //bias variation for each layer
+static float w_momentum[max_hidden_layers+1][max_neurons_per_layer][max_neurons_per_layer]; //weight variation for each layer
+static float b_momentum[max_hidden_layers+1][max_neurons_per_layer]; //bias variation for each layer
 
 
 static int number_of_layers;
@@ -105,9 +105,10 @@ void layer_output(float *input, int layer_index, int activ_function);
 void neuron_output(int neuron_index, int layer_index, float *input, int activ_function);
 void forward_propagation(int input[input_size][input_size]);
 float *lin_and_norm(int x[input_size][input_size]);
+float *lin_and_bin(int x[input_size][input_size]);
 void learn_example(int input_index);
 void reset_dw_db();
-void reset_dw_db_prev();
+void reset_momentum();
 void update_dw_db_prev();
 void average_dw_db(int M);
 void update_w_b();
@@ -120,8 +121,8 @@ float *get_probabilities(int input[input_size][input_size]);
 int get_best_class(float input[n_classes]);
 float loss_on_example(int *label,float *probabilities,int t_loss);
 void testing_layer_initialization(int n_layer);
-float optimizer_w(float delta, float input, float dw_prev);
-float optimizer_b(float delta, float db_prev);
+float optimizer_w(int l,int i, int j);
+float optimizer_b(int l, int i);
 void load_model(char *filename);
 void save_NN(char *filename);
 float loss_on_set(int (*labels)[n_classes],float (*probabilities)[n_classes], int dim, int t_loss);
@@ -258,7 +259,7 @@ void define_network_structure(int *npl, int n_hidden_layers, int activation, int
         else
             weights_dim[i][1] = neurons_per_layer[i-1];
     }
-    reset_dw_db_prev(); //initialize the previous weights and biases to zero
+    reset_momentum(); //initialize the previous weights and biases to zero
 }
 
 void define_training_parameters(int n_epochs,float lr, int loss, int shuffling, float error, int opt, float mom)
@@ -588,7 +589,23 @@ float *lin_and_norm(int x[input_size][input_size])
     return y;
 }
 
-
+float *lin_and_bin(int x[input_size][input_size]){
+    //takes an image and compress it to one dimension
+    //also encodes all values above a threshold to 1
+    float threshold = 10;
+    static float y[input_size*input_size];
+    for (int i=0; i<input_size; i++)
+    {
+        for (int j=0; j<input_size; j++)
+        {
+            if (x[i][j]>threshold)
+                y[i*input_size+j] = 1;
+            else
+                y[i*input_size+j] = 0;
+        }
+    }
+    return y;
+}
 //-----------------------
 //inference
 void neuron_output(int neuron_index, int layer_index, float *input, int activ_function)
@@ -693,7 +710,7 @@ void learn_example(int index_of_example)
                 for (int k=0; k<neurons_per_layer[l+1]; k++)
                 {
                     if(type_of_optimization==2){
-                        weighted_sum += (weights[l+1][i][k]+momentum*dw_prev[l+1][i][k])*deltas[l+1][k];
+                        weighted_sum += (weights[l+1][i][k]+momentum*w_momentum[l+1][i][k])*deltas[l+1][k];
                     }
                     else{
                         weighted_sum += weights[l+1][i][k]*deltas[l+1][k];
@@ -716,13 +733,13 @@ void learn_example(int index_of_example)
             }
             if(l==0){
                 for (int j=0; j<neurons_input_layer; j++)
-                    dw[l][i][j] += optimizer_w(deltas[l][i],input_linear[j],dw_prev[l][i][j]);
+                    dw[l][i][j] += learning_rate*deltas[l][i]*input_linear[j];
             }
             else{
                 for (int j=0; j<neurons_per_layer[l-1]; j++)
                 {
                     //compute the dw for the layer
-                    dw[l][i][j] += optimizer_w(deltas[l][i],outputs[l][j],dw_prev[l][i][j]);
+                    dw[l][i][j] += learning_rate*deltas[l][i]*outputs[l][j];
                     /*if(l==number_of_layers-1){
                         printf("%.3f ",dw[l][1][2]);
                     }*/
@@ -731,7 +748,7 @@ void learn_example(int index_of_example)
                     printf("\n");
                 }*/
             }
-            db[l][i] += optimizer_b(deltas[l][i],db_prev[l][i]);
+            db[l][i] += learning_rate*deltas[l][i];
             //for the first layer the outputs are the linearized inputs
         }
     }
@@ -741,38 +758,42 @@ void learn_example(int index_of_example)
     printf("\n");*/
 }
 
-float optimizer_w(float delta, float input, float dw_p){
+float optimizer_w(int l,int i, int j){
+    w_momentum[l][i][j] = momentum*w_momentum[l][i][j]+dw[l][i][j];//dw a questo punto è solo 
+    //-lambda*gradiente
     switch (type_of_optimization)
     {
     case 0://sgd
-        return learning_rate*delta*input;
+        return dw[l][i][j];
         break;
     case 1:
-        return learning_rate*delta*input+momentum*dw_p;
+        return w_momentum[l][i][j];
         break;
     case 2://nesterov
-        return learning_rate*delta*input+momentum*dw_p;
+        return w_momentum[l][i][j];
         break; 
     default: //sgd
-        return learning_rate*delta*input;
+        return dw[l][i][j];
         break;
     }
 }
 
-float optimizer_b(float delta, float db_p){
+float optimizer_b(int l,int i){
+    b_momentum[l][i] = momentum*b_momentum[l][i]+db[l][i];//dw a questo punto è solo 
+    //-lambda*gradiente
     switch (type_of_optimization)
     {
     case 0://sgd
-        return learning_rate*delta;
+        return db[l][i];
         break;
     case 1:
-        return learning_rate*delta+momentum*db_p;
+        return b_momentum[l][i];
         break;
-    case 2:
-        return learning_rate*delta+momentum*db_p;
-        break;
+    case 2://nesterov
+        return b_momentum[l][i];
+        break; 
     default: //sgd
-        return learning_rate*delta;
+        return db[l][i];
         break;
     }
 }
@@ -791,7 +812,7 @@ void reset_dw_db()
     }
 }
 
-void reset_dw_db_prev()
+void reset_momentum()
 {   
     for (int l=0; l<number_of_layers; l++)
     {
@@ -800,8 +821,8 @@ void reset_dw_db_prev()
         int n_neurons=neurons_per_layer[l];//cause the input neurons don't do computations
         //initialize the weights of the layer with a gaussian distribution
         for (int i=0; i<dim1; i++)
-            for (int j=0; j<dim2; j++) dw_prev[l][i][j] = 0;
-        for (int i=0; i<n_neurons; i++) db_prev[l][i] = 0;
+            for (int j=0; j<dim2; j++) w_momentum[l][i][j] = 0;
+        for (int i=0; i<n_neurons; i++) b_momentum[l][i] = 0;
     }
 }
 
@@ -829,13 +850,11 @@ void update_w_b(){
         //initialize the weights of the layer with a gaussian distribution
         for (int i=0; i<dim1; i++){
             for (int j=0; j<dim2; j++){
-                weights[l][i][j] += dw[l][i][j];
-                dw_prev[l][i][j] = dw[l][i][j];
+                weights[l][i][j] += optimizer_w(l,i,j);
             }
         }
         for (int i=0; i<n_neurons; i++){
-            biases[l][i] += db[l][i];
-            db_prev[l][i] = db[l][i];
+            biases[l][i] += optimizer_b(l,i);
         }
     }
 }
