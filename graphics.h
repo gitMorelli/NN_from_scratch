@@ -108,6 +108,7 @@ void get_keyboard_input();
 void draw_box_elements(struct Box *boxes,int num_boxes);
 void print_network_characteristics();
 void init_input_box(struct Box *input_box);
+int image_28[28][28];
 Boxes initialize_testing_boxes();
 Boxes initialize_interactive_boxes();
 Boxes initialize_training_training_boxes();
@@ -473,10 +474,10 @@ void drawing_function(int x, int y, int drawing_x,int drawing_y, int r,int dim,i
     (i+1)*dy+drawing_y, al_map_rgb(0, 0, 0));
 }*/
 
-void draw_matrix(int **drawing_matrix, int drawing_x,int drawing_y,int dim){
+void draw_matrix(int **matrix, int drawing_x,int drawing_y,int dim){
     for(int i=0;i<dim;i++){
         for(int j=0;j<dim;j++){
-            if(drawing_matrix[i][j]==255){
+            if(matrix[i][j]>=0){
                 int x_new=i+drawing_y;
                 int y_new=j+drawing_x;//x and y in the reference frame of the drawing area
                 al_draw_filled_rectangle(y_new, x_new, y_new+1, x_new+1, al_map_rgb(0, 0, 0));
@@ -505,6 +506,7 @@ void interactive_loop(){
     struct Box result_box = boxes[3];
     struct Box drawing_area = boxes[4];
     struct Box submit_button = boxes[5];
+    struct Box processed_area = boxes[6];
     int dim_drawing=drawing_area.x2-drawing_area.x1;
     int **drawing_matrix;
     drawing_matrix = (int **)malloc(dim_drawing * sizeof(int *));
@@ -617,6 +619,7 @@ void interactive_loop(){
             //printf("aaaaah\n");
             if (inference){
                 //printf("here 0\n");
+                //draw_processed_image();
                 int guess=process_drawing_region(dim_drawing, drawing_matrix);
                 //printf("guess=%d\n",guess);
                 inference=false;
@@ -626,6 +629,7 @@ void interactive_loop(){
             al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "INTERACTIVE");
             draw_box_elements(boxes,num_boxes);
             draw_matrix(drawing_matrix,drawing_area.x1,drawing_area.y1,dim_drawing);
+            draw_matrix(image_28,processed_area.x1,processed_area.y1,28);
             if(is_typing){
                 show_typing_interface(input_box,text_to_show,typed_text);
             }
@@ -1194,7 +1198,6 @@ int process_drawing_region(int dim, int **drawing_matrix){
     //n=dim
     int n=dim;
     int k=n-27;
-    int image[28][28];
     /* Convolution makes no sense since there is too much white
     for(int sup_i=0;sup_i<n-k+1;sup_i++){
         for(int sup_j=0;sup_j<n-k+1;sup_j++){
@@ -1214,7 +1217,7 @@ int process_drawing_region(int dim, int **drawing_matrix){
     int l_sup=2;//-> considero un qudrato di lato 5 attorno al pixel di arrivo per fare la media
     for(int i=0;i<28;i++){
         for(int j=0;j<28;j++){
-            image[i][j]=0;
+            image_28[i][j]=0;
             int i_sup=(int)((float)i/28.0*(float)n);
             int j_sup=(int)((float)j/28.0*(float)n);
             for(int k=i_sup-l_sup;k<i_sup+l_sup+1;k++){
@@ -1223,13 +1226,13 @@ int process_drawing_region(int dim, int **drawing_matrix){
                         /*if(drawing_matrix[k][l]>image[i][j]){//i take the max value
                             image[i][j]=drawing_matrix[k][l];
                         }*/
-                        image[i][j]+=(int)((float)(drawing_matrix[k][l]/(float)((2*l_sup+1)*(2*l_sup+1)))); //i take the average
+                        image_28[i][j]+=(int)((float)(drawing_matrix[k][l]/(float)((2*l_sup+1)*(2*l_sup+1)))); //i take the average
                     }
                 }
             }
         }
     }
-    forward_propagation(image);
+    forward_propagation(image_28);
     int guess=get_best_class(outputs[number_of_layers-1]);
     //print_image(image);
     //print_image(testing_images[0]);
@@ -1612,12 +1615,19 @@ Boxes initialize_interactive_boxes(){
     struct Box result_box = create_default_box();
     struct Box drawing_area = create_default_box();
     struct Box submit_button = create_default_box();
+    struct Box processed_area = create_default_box();
     //i define the drawing region
     drawing_area.color=al_map_rgb(255, 255, 255);
     drawing_area.x1=x_blocks*1;
     drawing_area.x2=x_blocks*3;
     drawing_area.y1=y_blocks;
     drawing_area.y2=y_blocks+drawing_area.x2-drawing_area.x1;
+    //i define the region in which i show the processed image
+    processed_area.color=al_map_rgb(255, 255, 255);
+    processed_area.x1=x_blocks*5;
+    processed_area.x2=processed_area.x1+28;
+    processed_area.y1=y_blocks;
+    processed_area.y2=y_blocks+28;
     //i define the clear button
     clear_button.color=al_map_rgba(0, 255, 0,0.6);
     clear_button.x1=x_blocks_fine*7;
@@ -1657,9 +1667,9 @@ Boxes initialize_interactive_boxes(){
     submit_button.y1=y_blocks_fine*4;
     submit_button.y2=y_blocks_fine*5;
     strcpy(submit_button.text,"SUBMIT");
-    int num_boxes=6;
+    int num_boxes=7;
     struct Box boxes[MAX_BUTTONS]={clear_button,NN_selection,NN_selection_result,
-    result_box,drawing_area,submit_button};
+    result_box,drawing_area,submit_button,processed_area};
     Boxes result;
     result.num_boxes=num_boxes;
     for(int i=0;i<num_boxes;i++){
