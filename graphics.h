@@ -102,12 +102,14 @@ void plot_metrics(struct Box results_region,Metrics resulting_metrics);
 int read_filename(char (*valid_names)[MAX_FILE_NAME_LENGTH], int dim,char *text);
 int read_filenames_from_directory(char (*filenames)[MAX_FILE_NAME_LENGTH]);
 void draw_matrix(int **drawing_matrix, int drawing_x,int drawing_y,int dim);
+void draw_image_28(int drawing_x,int drawing_y,int dim);
 void show_typing_interface(struct Box input_box, char *text_to_show, char *typed_text);
 void load_saved_model(int n_files,struct Box *box);
 void get_keyboard_input();
 void draw_box_elements(struct Box *boxes,int num_boxes);
 void print_network_characteristics();
 void init_input_box(struct Box *input_box);
+void get_pixel_values_in_region(int x, int y, int width, int height, int **drawing_matrix);
 int image_28[28][28];
 Boxes initialize_testing_boxes();
 Boxes initialize_interactive_boxes();
@@ -445,18 +447,26 @@ void menu_loop(){
 
 
 void drawing_function(int x, int y, int drawing_x,int drawing_y, int r,int dim,int **drawing_matrix){
-    al_draw_filled_rectangle(x-r, y-r, x+r, y+r, al_map_rgb(0, 0, 0));
-    //al_draw_filled_circle(x, y,r, al_map_rgb(0, 0, 0));
     int x_new=x-drawing_x;
     int y_new=y-drawing_y;//x and y in the reference frame of the drawing area
     //consider that in matrices you have i=row and j=column while for pixels is opposite
-    for(int i=y_new-r;i<=y_new+r;i++){
+
+    //al_draw_filled_rectangle(x-r, y-r, x+r, y+r, al_map_rgb(0, 0, 0));
+    /*for(int i=y_new-r;i<=y_new+r;i++){
         for(int j=x_new-r;j<=x_new+r;j++){
             if(i>=0 && i<dim && j>=0 && j<dim){
                 drawing_matrix[i][j]=255;
             }
         }
-    }
+    }*/
+    al_draw_filled_circle(x, y,r, al_map_rgb(0, 0, 0));
+    /*for(int i=y_new-r;i<=y_new+r;i++){
+        for(int j=x_new-r;j<=x_new+r;j++){
+            if(i>=0 && i<dim && j>=0 && j<dim){
+                drawing_matrix[i][j]=255;
+            }
+        }
+    }*/
 }
 
 /*void drawing_function_2(int x, int y, int drawing_x,int drawing_y, int r,int dim,int **drawing_matrix){
@@ -477,13 +487,35 @@ void drawing_function(int x, int y, int drawing_x,int drawing_y, int r,int dim,i
 void draw_matrix(int **matrix, int drawing_x,int drawing_y,int dim){
     for(int i=0;i<dim;i++){
         for(int j=0;j<dim;j++){
-            if(matrix[i][j]>=0){
+            if(matrix[i][j]==255){
                 int x_new=i+drawing_y;
                 int y_new=j+drawing_x;//x and y in the reference frame of the drawing area
                 al_draw_filled_rectangle(y_new, x_new, y_new+1, x_new+1, al_map_rgb(0, 0, 0));
             }
         }
     }
+
+}
+
+void draw_image_28(int drawing_x,int drawing_y,int dim){
+    /*for(int i=0;i<28;i++){
+        for(int j=0;j<28;j++){
+            if(image_28[i][j]>0){
+                int x_new=i+drawing_y;
+                int y_new=j+drawing_x;//x and y in the reference frame of the drawing area
+                al_draw_filled_rectangle(y_new, x_new, y_new+1, x_new+1, al_map_rgb(0, 0, 0));
+            }
+        }
+    }*/
+    int upsampled_image[dim][dim];
+    /*int **upsampled_image=(int **)malloc(dim * sizeof(int *));
+    for(int i = 0; i < dim; i++) {
+        upsampled_image[i] = (int *)malloc(dim * sizeof(int));
+    }*/
+    upsample_image(image_28,dim,upsampled_image);
+    ALLEGRO_BITMAP *bitmap=create_bitmap_from_image(dim,upsampled_image);
+    //al_set_target_bitmap(al_get_backbuffer(disp));
+    al_draw_bitmap(bitmap, drawing_x, drawing_y , 0);
 
 }
 //which elements i want in the window? A window where i can draw numbers with the mouse
@@ -556,7 +588,7 @@ void interactive_loop(){
                     drawing = true; // Start drawing
                     last_x = event.mouse.x; // Update last position
                     last_y = event.mouse.y;
-                    redraw=true;
+                    redraw=false;
                 }
                 if (is_point_inside_button(event.mouse.x, event.mouse.y, submit_button)) {
                     // Button was clicked, perform an action
@@ -608,7 +640,7 @@ void interactive_loop(){
         if(drawing){
             //printf("drawing\n");
             drawing_function(last_x,last_y, drawing_area.x1,drawing_area.y1, 
-            12, dim_drawing, drawing_matrix);//fill drawing matrix
+            13, dim_drawing, drawing_matrix);//fill drawing matrix
             //drawing_function_2(last_x,last_y, drawing_area.x1,drawing_area.y1, 
             //10, dim_drawing, drawing_matrix);//fill drawing matrix
         }
@@ -620,6 +652,7 @@ void interactive_loop(){
             if (inference){
                 //printf("here 0\n");
                 //draw_processed_image();
+                get_pixel_values_in_region(drawing_area.x1, drawing_area.y1, dim_drawing, dim_drawing,drawing_matrix);
                 int guess=process_drawing_region(dim_drawing, drawing_matrix);
                 //printf("guess=%d\n",guess);
                 inference=false;
@@ -629,7 +662,7 @@ void interactive_loop(){
             al_draw_textf(font, al_map_rgb(255, 255, 255), width/2, 10, 1, "INTERACTIVE");
             draw_box_elements(boxes,num_boxes);
             draw_matrix(drawing_matrix,drawing_area.x1,drawing_area.y1,dim_drawing);
-            draw_matrix(image_28,processed_area.x1,processed_area.y1,28);
+            draw_image_28(processed_area.x1,processed_area.y1,processed_area.x2-processed_area.x1);
             if(is_typing){
                 show_typing_interface(input_box,text_to_show,typed_text);
             }
@@ -1223,8 +1256,8 @@ int process_drawing_region(int dim, int **drawing_matrix){
             for(int k=i_sup-l_sup;k<i_sup+l_sup+1;k++){
                 for(int l=j_sup-l_sup;l<j_sup+l_sup+1;l++){
                     if(k>=0 && k<n && l>=0 && l<n){
-                        /*if(drawing_matrix[k][l]>image[i][j]){//i take the max value
-                            image[i][j]=drawing_matrix[k][l];
+                        /*if(drawing_matrix[k][l]>image_28[i][j]){//i take the max value
+                            image_28[i][j]=drawing_matrix[k][l];
                         }*/
                         image_28[i][j]+=(int)((float)(drawing_matrix[k][l]/(float)((2*l_sup+1)*(2*l_sup+1)))); //i take the average
                     }
@@ -1301,6 +1334,35 @@ ALLEGRO_BITMAP *create_bitmap_from_image(int dim, int image[dim][dim]){
     al_unlock_bitmap(bitmap);
     al_set_target_backbuffer(disp);
     return bitmap;
+}
+
+void get_pixel_values_in_region(int x, int y, int width, int height, int **drawing_matrix){
+    // Define the region to capture
+    ALLEGRO_BITMAP *backbuffer = al_get_backbuffer(disp);
+    al_lock_bitmap(backbuffer, ALLEGRO_PIXEL_FORMAT_ANY, ALLEGRO_LOCK_READONLY);
+    // Extract the pixel values into a matrix
+    ALLEGRO_COLOR **pixel_matrix = (ALLEGRO_COLOR **)malloc(height * sizeof(ALLEGRO_COLOR *));
+    for (int i = 0; i < height; i++) {
+        pixel_matrix[i] = (ALLEGRO_COLOR *)malloc(width * sizeof(ALLEGRO_COLOR));
+        for (int j = 0; j < width; j++) {
+            pixel_matrix[i][j] = al_get_pixel(backbuffer, x + j, y + i);
+        }
+    }
+    al_unlock_bitmap(backbuffer);
+    // Print the pixel values (optional)
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            unsigned char r, g, b;
+            al_unmap_rgb(pixel_matrix[i][j], &r, &g, &b);
+            drawing_matrix[i][j] = 255-(0.299*r+0.587*g+0.114*b);
+        }
+    }
+
+    // Clean up
+    for (int i = 0; i < height; i++) {
+        free(pixel_matrix[i]);
+    }
+    free(pixel_matrix);
 }
 
 void display_next_image(int dim, int x, int y,int index){
@@ -1618,16 +1680,10 @@ Boxes initialize_interactive_boxes(){
     struct Box processed_area = create_default_box();
     //i define the drawing region
     drawing_area.color=al_map_rgb(255, 255, 255);
-    drawing_area.x1=x_blocks*1;
-    drawing_area.x2=x_blocks*3;
-    drawing_area.y1=y_blocks;
-    drawing_area.y2=y_blocks+drawing_area.x2-drawing_area.x1;
-    //i define the region in which i show the processed image
-    processed_area.color=al_map_rgb(255, 255, 255);
-    processed_area.x1=x_blocks*5;
-    processed_area.x2=processed_area.x1+28;
-    processed_area.y1=y_blocks;
-    processed_area.y2=y_blocks+28;
+    drawing_area.x1=x_blocks_fine*2;
+    drawing_area.x2=x_blocks_fine*4;
+    drawing_area.y1=y_blocks_fine*4;
+    drawing_area.y2=drawing_area.y1+drawing_area.x2-drawing_area.x1;
     //i define the clear button
     clear_button.color=al_map_rgba(0, 255, 0,0.6);
     clear_button.x1=x_blocks_fine*7;
@@ -1653,13 +1709,21 @@ Boxes initialize_interactive_boxes(){
     strcpy(NN_selection_result.text," ");
     //i define the result region
     result_box.color=al_map_rgb(255, 255, 255);
-    result_box.x1=x_blocks_fine*3;
-    result_box.x2=x_blocks_fine*5;
+    result_box.x1=drawing_area.x1+x_blocks_fine;
+    result_box.x2=result_box.x1+x_blocks_fine*2;
     result_box.y1=drawing_area.y2+y_blocks_fine;
     result_box.y2=result_box.y1+y_blocks_fine;
     result_box.text_position=2;//left aligned
     result_box.text_color=al_map_rgb(0, 0, 0);
     strcpy(result_box.text,"RESULT:");
+    //i define the region in which i show the processed image
+    processed_area.color=al_map_rgb(255, 255, 255);
+    int image_dim=28*5;
+    processed_area.x1=drawing_area.x2+x_blocks_fine/2;
+    processed_area.x2=processed_area.x1+image_dim;
+    processed_area.y1=drawing_area.y1+y_blocks_fine/2;
+    processed_area.y2=processed_area.y1+image_dim;
+    strcpy(processed_area.text,"");
     //i define the submit button
     submit_button.color=al_map_rgb(255, 0, 0);
     submit_button.x1=x_blocks_fine*9;

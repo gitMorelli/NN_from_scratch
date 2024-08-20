@@ -462,6 +462,26 @@ void gaussian_layer_initialization(int n_layer)
     }
 }
 
+void glorot_layer_initialization(int n_layer)
+{
+    int dim1 = weights_dim[n_layer][0];
+    int dim2 = weights_dim[n_layer][1];
+    int n_weights=dim1*dim2;
+    int n_neurons=neurons_per_layer[n_layer];//cause the input neurons don't do computations
+    //initialize the weights of the layer with a gaussian distribution
+    for (int i=0; i<dim1; i++)
+    {
+        for (int j=0; j<dim2; j++)
+        {
+            weights[n_layer][i][j] = rand_normal(0,sqrt(2.0/(weights_dim[n_layer][1]+weights_dim[n_layer][0])));
+        }
+    }
+    for (int i=0; i<n_neurons; i++) 
+    {
+        biases[n_layer][i] = rand_normal(0,sqrt(2.0/(weights_dim[n_layer][1]+weights_dim[n_layer][0])));
+    }
+}
+
 void testing_layer_initialization(int n_layer){
     int dim1 = weights_dim[n_layer][0];
     int dim2 = weights_dim[n_layer][1];
@@ -491,6 +511,12 @@ void weight_initialization()
         for (int i=0; i<number_of_layers; i++)
         {
             gaussian_layer_initialization(i);
+        }
+        break;
+    case 2://glorot
+        for (int i=0; i<number_of_layers; i++)
+        {
+            glorot_layer_initialization(i);
         }
         break;
     case 5://testing initialization
